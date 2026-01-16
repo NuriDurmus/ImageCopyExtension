@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Copy & Converter</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📸 Image Uploader</h1>
+        </div>
+        
+        <div class="content">
+            <div class="info-section">
+                <p class="info-text">Copy an image and enable this feature</p>
+            </div>
+
+            <div class="format-section">
+                <label for="sourceFormat">Source Format:</label>
+                <select id="sourceFormat" class="format-select">
+                    <option value="all">All Formats</option>
+                    <option value="jpeg">JPEG</option>
+                    <option value="png">PNG</option>
+                    <option value="webp">WebP</option>
+                    <option value="bmp">BMP</option>
+                    <option value="gif">GIF</option>
+                </select>
+            </div>
+
+            <div class="format-section">
+                <label for="targetFormat">Target Format:</label>
+                <select id="targetFormat" class="format-select">
+                    <option value="original">Original (No Conversion)</option>
+                    <option value="jpeg">JPEG</option>
+                    <option value="png">PNG</option>
+                    <option value="webp">WebP</option>
+                    <option value="bmp">BMP</option>
+                    <option value="gif">GIF</option>
+                </select>
+            </div>
+
+            <div class="quality-section" id="qualitySection" style="display: none;">
+                <label for="quality">Quality (%):</label>
+                <div class="quality-control">
+                    <input type="range" id="quality" min="1" max="100" value="100">
+                    <span id="qualityValue">100</span>
+                </div>
+            </div>
+
+            <div class="conversion-list-section">
+                <h3>Conversion Rules:</h3>
+                <button id="addRuleBtn" class="btn btn-small">+ Add Rule</button>
+                <div id="rulesList" class="rules-list"></div>
+            </div>
+
+            <div class="shortcut-section">
+                <h3>🖼️ Image Picker Mode Shortcut:</h3>
+                <div class="shortcut-info">
+                    <p>Shortcut to select and copy images from page:</p>
+                    <input type="text" id="shortcutInput" class="shortcut-input" placeholder="Press shortcut keys..." readonly>
+                    <button id="clearShortcutBtn" class="btn btn-small">Clear</button>
+                </div>
+            </div>
+
+            <div class="button-section">
+                <button id="activateBtn" class="btn btn-primary">
+                    <span class="btn-icon">✓</span>
+                    Enable Feature
+                </button>
+                <button id="deactivateBtn" class="btn btn-secondary" style="display: none;">
+                    <span class="btn-icon">✗</span>
+                    Disable Feature
+                </button>
+            </div>
+
+            <div class="status-section">
+                <div id="statusMessage" class="status-message"></div>
+            </div>
+
+            <div class="clipboard-preview" id="clipboardPreview" style="display: none;">
+                <h3>Image in Clipboard:</h3>
+                <img id="previewImage" alt="Preview">
+                <div class="preview-info">
+                    <span id="imageInfo"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p class="instructions">
+                <strong>📋 File Input Feature:</strong><br>
+                1. Copy an image (Ctrl+C)<br>
+                2. Select target format and add rule<br>
+                3. Click "Enable Feature" button<br>
+                4. Click any file input field<br><br>
+                <strong>🖼️ Image Picker Mode:</strong><br>
+                • Set shortcut and press keys<br>
+                • Hover over images (they will be highlighted)<br>
+                • Click to copy<br>
+                • <em>Note: This feature is always active, no activation required</em>
+            </p>
+        </div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>
