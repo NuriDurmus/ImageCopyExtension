@@ -4,6 +4,13 @@ Chrome extension to paste clipboard images into file input fields, upload with f
 
 ##  Features
 
+###  Image Editor Enhancements
+- **Integrated editing workspace**: Launch a modal editor from the extension to preview and fine-tune any clipboard image before upload.
+- **Resize & crop toolset**: Resize with presets/custom ratios, crop with draggable handles, zoom controls, and undo history (Ctrl+Z) for safe experimentation.
+- **Custom output controls**: Select PNG/JPEG/WebP + quality slider; the editor always honors these settings when copying, downloading, or inserting images.
+- **Fast downloads with feedback**: A dedicated ⬇️ Download button exports the edited result and shows a temporary confirmation banner with format/size meta.
+- **Persistent, visible settings**: Badges constantly refresh resolution, file size, and format; last-used settings are saved for next time while active buttons highlight the current choice.
+
 ###  Main Feature: Clipboard to File Input Upload
 - **Automatic file input detection**: Captures file input fields you click
 - **Clipboard support**: Automatically detects images in clipboard (copied with Ctrl+C)
