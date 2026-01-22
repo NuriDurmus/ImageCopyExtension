@@ -6,8 +6,10 @@ Chrome extension to paste clipboard images into file input fields, upload with f
 
 ###  Image Editor Enhancements
 - **Integrated editing workspace**: Launch a modal editor from the extension to preview and fine-tune any clipboard image before upload.
+- **Direct editing from popup**: Click the "Edit Image" button in the popup to open the editor instantly without needing file input fields.
 - **Resize & crop toolset**: Resize with presets/custom ratios, crop with draggable handles, zoom controls, and undo history (Ctrl+Z) for safe experimentation.
 - **Custom output controls**: Select PNG/JPEG/WebP + quality slider; the editor always honors these settings when copying, downloading, or inserting images.
+- **Copy to clipboard**: Use the 📋 Copy button in the editor to copy the edited image directly to clipboard with all your adjustments applied.
 - **Fast downloads with feedback**: A dedicated ⬇️ Download button exports the edited result and shows a temporary confirmation banner with format/size meta.
 - **Persistent, visible settings**: Badges constantly refresh resolution, file size, and format; last-used settings are saved for next time while active buttons highlight the current choice.
 
@@ -26,6 +28,16 @@ Chrome extension to paste clipboard images into file input fields, upload with f
 - **Large X button**: Prominent close button in top-right corner to exit mode
 - **Independent operation**: Works independently from main feature (file input)
 
+###  Image Replace Mode
+- **Replace page images with clipboard content**: Replace any image on a webpage with the image currently in your clipboard
+- **Keyboard shortcut activation**: Fully customizable shortcut (e.g., `Ctrl+Alt+R`)
+- **Advanced image detection**: Uses the same sophisticated algorithm as Image Picker Mode to find all images on the page
+- **Visual feedback**: Blue highlight and glow effect on hover to show which image will be replaced
+- **Smart replacement**: Only replaces the image source (src/srcset/background-image) without affecting any other HTML attributes, classes, or styles
+- **Continuous operation**: Replace multiple images in a single session without exiting the mode
+- **ESC key support**: Press Escape or click the X button to exit the mode
+- **Real-time verification**: Shows success/error notifications for each replacement
+
 ###  Supported Format Conversions
 
 - **Source formats**: PNG, JPEG, WebP, BMP, GIF
@@ -34,11 +46,14 @@ Chrome extension to paste clipboard images into file input fields, upload with f
 
 ###  Usage Scenarios
 
-1. **Social media profile photo**: Copy  Convert  Upload
-2. **Form filling**: Quickly upload your documents
-3. **E-commerce**: Easily add product images
-4. **File format conversion**: Copy image, change format, upload
-5. **Web image selection & copying**: Select and copy images from any webpage to clipboard
+1. **Social media profile photo**: Copy → Edit (crop, resize, adjust) → Upload
+2. **Screenshot editing**: Take a screenshot with Windows+Shift+S → Edit instantly → Copy to clipboard or upload
+3. **Form filling**: Quickly upload your documents with format conversion
+4. **E-commerce**: Easily add product images with automatic resizing and optimization
+5. **File format conversion**: Copy image, change format, adjust quality, upload
+6. **Web image selection & copying**: Select and copy images from any webpage to clipboard
+7. **Bulk image replacement**: Replace placeholder images on a webpage with your own images from clipboard
+8. **Design mockups**: Quickly swap images in web designs to preview different options
 
 ##  Installation
 
@@ -68,6 +83,28 @@ Chrome extension to paste clipboard images into file input fields, upload with f
    - Icon will appear in toolbar
 
 ##  Usage Guide
+
+### Direct Image Editing from Popup
+
+1. **Copy an image** (Ctrl+C, Windows+Shift+S, or right-click → Copy)
+   
+2. **Open the extension popup**
+   - Click the extension icon in the toolbar
+   - The copied image will be displayed in the preview section
+
+3. **Click "Edit Image" button**
+   - The image editor will open in a new or existing browser tab
+   - No need to have a file input field or webpage open
+
+4. **Edit your image**
+   - Crop, resize, rotate, apply filters
+   - Adjust output format (PNG/JPEG/WebP) and quality
+   - Use the zoom controls for precise editing
+
+5. **Export your result**
+   - **📋 Copy button**: Copy the edited image to clipboard
+   - **⬇️ Download button**: Download the edited image to your computer
+   - **✓ Use Edited Image button**: If opened from a file input field, insert the image directly
 
 ### Clipboard to File Input Upload
 
@@ -118,12 +155,48 @@ Chrome extension to paste clipboard images into file input fields, upload with f
 
 **Note**: This feature is completely independent from the main extension feature (paste to file input). It works even when the extension is not active.
 
+### Image Replace Mode
+
+1. **Copy an image to clipboard**
+   - Use Ctrl+C, Windows+Shift+S, or any method to copy an image
+
+2. **Set up the shortcut** (first time only)
+   - Open the extension popup
+   - Find the "Image Replace Mode Shortcut" section
+   - Click in the input field and press your desired key combination (e.g., `Ctrl+Alt+R`)
+   - The shortcut is automatically saved
+
+3. **Activate the mode on any webpage**
+   - Press your configured shortcut
+   - A blue information banner appears at the top
+   - The mode verifies that you have an image in clipboard
+
+4. **Select and replace images**
+   - Hover over any image on the page
+   - Images are highlighted with a blue border and glow effect
+   - The extension detects both `<img>` tags and CSS background images
+   - Click on any highlighted image to replace it with your clipboard image
+
+5. **Continue or exit**
+   - Replace as many images as you want in one session
+   - Press Escape or click the red X button to exit the mode
+
+**Important**: This feature only replaces the image source (src, srcset, or background-image). All other HTML attributes, CSS classes, inline styles, and event handlers remain unchanged, ensuring the page functionality is preserved.
+
 ### Customize Shortcut
 
 1. Open extension popup
-2. Click the input field in "Image Picker Shortcut" section
-3. Press your desired key combination (e.g., `Ctrl+Shift+P`)
-4. Shortcut is automatically saved and active in all tabs
+2. Find the shortcut section you want to customize:
+   - **"Image Picker Mode Shortcut"**: For copying images from pages
+   - **"Image Replace Mode Shortcut"**: For replacing page images with clipboard content
+3. Click the input field in the desired section
+4. Press your desired key combination (e.g., `Ctrl+Shift+P`, `Ctrl+Alt+R`)
+5. The shortcut is automatically saved and becomes active in all tabs immediately
+
+**Tips for choosing shortcuts**:
+- Use at least two modifier keys (Ctrl, Alt, Shift) plus a letter
+- Avoid conflicts with browser shortcuts (e.g., Ctrl+T, Ctrl+W)
+- Choose memorable combinations related to the action (R for Replace, S for Select)
 
 ##  Settings
 
@@ -237,6 +310,18 @@ Edit the `<select>` element in popup.html
 2. Check if image preview appears in the popup
 3. Refresh the page and try again
 4. Disable and re-enable the extension
+
+### Editor Not Opening
+1. If you see "Content script not ready" error, the extension will automatically create a new tab for editing
+2. Make sure you have at least one browser tab open
+3. The extension needs proper permissions - check if any security software is blocking it
+4. Try refreshing the page and clicking the Edit button again
+
+### Image Replace Mode Issues
+1. **No images detected**: Some images might be loaded dynamically or embedded in complex ways
+2. **Replace not working**: Ensure you have a valid image in clipboard before activating the mode
+3. **Page looks broken**: Refresh the page to restore original images - the extension never permanently modifies the page HTML
+4. **Shortcut conflicts**: If your shortcut doesn't work, it might conflict with another extension or browser shortcut
 
 ### Format Conversion Not Working
 1. Make sure the target format is supported in your browser

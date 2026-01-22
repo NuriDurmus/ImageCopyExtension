@@ -6,7 +6,8 @@ chrome.runtime.onInstalled.addListener((details) => {
         chrome.storage.local.set({
             isActive: false,
             conversionRules: [],
-            imagePickerShortcut: null
+            imagePickerShortcut: null,
+            imageReplaceShortcut: null
         });
     } else if (details.reason === 'update') {
     }
@@ -28,6 +29,9 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
         }
         if (changes.imagePickerShortcut) {
             updateMessage.changes.imagePickerShortcut = changes.imagePickerShortcut.newValue;
+        }
+        if (changes.imageReplaceShortcut) {
+            updateMessage.changes.imageReplaceShortcut = changes.imageReplaceShortcut.newValue;
         }
         
         chrome.tabs.query({}, (tabs) => {
@@ -61,13 +65,14 @@ async function handleClipboardRequest(sendResponse) {
 // On tab update, send current state to newly loaded pages
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete') {
-        chrome.storage.local.get(['isActive', 'conversionRules', 'imagePickerShortcut'], (result) => {
+        chrome.storage.local.get(['isActive', 'conversionRules', 'imagePickerShortcut', 'imageReplaceShortcut'], (result) => {
             chrome.tabs.sendMessage(tabId, {
                 action: 'storageUpdate',
                 changes: {
                     isActive: result.isActive || false,
                     conversionRules: result.conversionRules || [],
-                    imagePickerShortcut: result.imagePickerShortcut || null
+                    imagePickerShortcut: result.imagePickerShortcut || null,
+                    imageReplaceShortcut: result.imageReplaceShortcut || null
                 }
             }).catch(() => {
                 // Content script may not be loaded yet; ignore silently

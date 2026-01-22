@@ -12,6 +12,14 @@ let currentHighlightedElement = null;
 let imagePickerShortcut = null; // Shortcut set by user
 let mouseMoveTimeout = null; // For debounce
 
+// Variables for Image Replace Mode
+let imageReplaceMode = false;
+let imageReplaceOverlay = null;
+let imageReplaceCloseButton = null;
+let currentReplaceHighlightedElement = null;
+let imageReplaceShortcut = null; // Shortcut set by user
+let replaceMouseMoveTimeout = null; // For debounce
+
 // Image Editor Settings Storage Key
 const IMAGE_EDITOR_SETTINGS_KEY = 'imageEditorLastSettings';
 
@@ -38,6 +46,10 @@ function initialize() {
             } else if (request.action === 'updateShortcut') {
                 imagePickerShortcut = request.shortcut;
                 sendResponse({ success: true });
+            } else if (request.action === 'openImageEditor') {
+                // Open image editor with data from popup
+                handleOpenImageEditorFromPopup(request, sendResponse);
+                return true; // Keep message channel open for async response
             } else if (request.action === 'storageUpdate') {
                 // Apply storage changes
                 if ('isActive' in request.changes) {
@@ -59,13 +71,17 @@ function initialize() {
                     imagePickerShortcut = request.changes.imagePickerShortcut;
                 }
                 
+                if ('imageReplaceShortcut' in request.changes) {
+                    imageReplaceShortcut = request.changes.imageReplaceShortcut;
+                }
+                
                 sendResponse({ success: true });
             }
             return true;
         });
 
         // Check state when page loads
-        chrome.storage.local.get(['isActive', 'conversionRules', 'imagePickerShortcut'], (result) => {
+        chrome.storage.local.get(['isActive', 'conversionRules', 'imagePickerShortcut', 'imageReplaceShortcut'], (result) => {
             if (result.isActive) {
                 isActive = true;
                 conversionRules = result.conversionRules || [];
@@ -73,6 +89,9 @@ function initialize() {
             }
             if (result.imagePickerShortcut) {
                 imagePickerShortcut = result.imagePickerShortcut;
+            }
+            if (result.imageReplaceShortcut) {
+                imageReplaceShortcut = result.imageReplaceShortcut;
             }
         });
     } else {
@@ -818,20 +837,36 @@ function observeNewFileInputs() {
 
 // Keyboard shortcut listener: Dynamic shortcut
 document.addEventListener('keydown', (e) => {
-    // Exit if shortcut is not set
-    if (!imagePickerShortcut) return;
+    // Check image picker shortcut
+    if (imagePickerShortcut) {
+        const pickerMatches = 
+            (imagePickerShortcut.ctrl === e.ctrlKey) &&
+            (imagePickerShortcut.alt === e.altKey) &&
+            (imagePickerShortcut.shift === e.shiftKey) &&
+            (imagePickerShortcut.meta === e.metaKey) &&
+            (imagePickerShortcut.key === e.key || imagePickerShortcut.code === e.code);
+        
+        if (pickerMatches) {
+            e.preventDefault();
+            toggleImagePickerMode();
+            return;
+        }
+    }
     
-    // Check shortcut match
-    const matches = 
-        (imagePickerShortcut.ctrl === e.ctrlKey) &&
-        (imagePickerShortcut.alt === e.altKey) &&
-        (imagePickerShortcut.shift === e.shiftKey) &&
-        (imagePickerShortcut.meta === e.metaKey) &&
-        (imagePickerShortcut.key === e.key || imagePickerShortcut.code === e.code);
-    
-    if (matches) {
-        e.preventDefault();
-        toggleImagePickerMode();
+    // Check image replace shortcut
+    if (imageReplaceShortcut) {
+        const replaceMatches = 
+            (imageReplaceShortcut.ctrl === e.ctrlKey) &&
+            (imageReplaceShortcut.alt === e.altKey) &&
+            (imageReplaceShortcut.shift === e.shiftKey) &&
+            (imageReplaceShortcut.meta === e.metaKey) &&
+            (imageReplaceShortcut.key === e.key || imageReplaceShortcut.code === e.code);
+        
+        if (replaceMatches) {
+            e.preventDefault();
+            toggleImageReplaceMode();
+            return;
+        }
     }
 });
 
@@ -1215,6 +1250,427 @@ function showImagePickerNotification(message, type) {
     setTimeout(() => {
         notification.remove();
         style.remove();
+    }, 1000);
+}
+
+// ============================================
+// IMAGE REPLACE MODE - Replace page images with clipboard image
+// ============================================
+
+// Toggle image replace mode
+function toggleImageReplaceMode() {
+    if (imageReplaceMode) {
+        deactivateImageReplaceMode();
+    } else {
+        activateImageReplaceMode();
+    }
+}
+
+// Activate image replace mode
+async function activateImageReplaceMode() {
+    if (!imageReplaceShortcut) {
+        console.warn('⚠️ Replace shortcut not set! Please set a shortcut from the popup.');
+        showImageReplaceNotification('⚠️ Please set a replace shortcut from the popup first', 'error');
+        return;
+    }
+    
+    // Check if there's an image in clipboard
+    try {
+        const items = await navigator.clipboard.read();
+        let hasImage = false;
+        
+        for (const item of items) {
+            const imageTypes = item.types.filter(type => type.startsWith('image/'));
+            if (imageTypes.length > 0) {
+                hasImage = true;
+                break;
+            }
+        }
+        
+        if (!hasImage) {
+            showImageReplaceNotification('⚠️ No image in clipboard! Copy an image first.', 'error');
+            return;
+        }
+    } catch (error) {
+        console.error('Clipboard check error:', error);
+        showImageReplaceNotification('⚠️ Cannot access clipboard', 'error');
+        return;
+    }
+    
+    imageReplaceMode = true;
+    
+    // Create overlay
+    imageReplaceOverlay = document.createElement('div');
+    imageReplaceOverlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 999999;
+        cursor: crosshair;
+        pointer-events: auto;
+    `;
+    
+    // Create close button
+    imageReplaceCloseButton = document.createElement('div');
+    imageReplaceCloseButton.innerHTML = '✕';
+    imageReplaceCloseButton.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        width: 40px;
+        height: 40px;
+        background: #ff4444;
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        font-weight: bold;
+        cursor: pointer;
+        z-index: 9999999;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        transition: transform 0.2s;
+    `;
+    imageReplaceCloseButton.onmouseover = () => {
+        imageReplaceCloseButton.style.transform = 'scale(1.1)';
+    };
+    imageReplaceCloseButton.onmouseout = () => {
+        imageReplaceCloseButton.style.transform = 'scale(1)';
+    };
+    imageReplaceCloseButton.onclick = (e) => {
+        e.stopPropagation();
+        deactivateImageReplaceMode();
+    };
+    
+    // Create info panel
+    const infoPanel = document.createElement('div');
+    infoPanel.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(33, 150, 243, 0.95);
+        color: white;
+        padding: 15px 30px;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 500;
+        z-index: 9999999;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+    infoPanel.innerHTML = '🔄 <strong>Image Replace Mode</strong> - Hover over images and click to replace';
+    
+    // ESC key handler
+    const escHandler = (e) => {
+        if (e.key === 'Escape') {
+            deactivateImageReplaceMode();
+            document.removeEventListener('keydown', escHandler);
+        }
+    };
+    document.addEventListener('keydown', escHandler);
+    
+    // Store ESC handler for cleanup
+    imageReplaceOverlay._escHandler = escHandler;
+    
+    // Mouse move handler with debounce
+    const handleMouseMove = (e) => {
+        clearTimeout(replaceMouseMoveTimeout);
+        replaceMouseMoveTimeout = setTimeout(() => {
+            findAndHighlightReplaceImage(e.clientX, e.clientY);
+        }, 50);
+    };
+    
+    // Click handler
+    const handleClick = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (currentReplaceHighlightedElement) {
+            await replaceImageWithClipboard(currentReplaceHighlightedElement);
+        }
+    };
+    
+    imageReplaceOverlay.addEventListener('mousemove', handleMouseMove);
+    imageReplaceOverlay.addEventListener('click', handleClick);
+    
+    document.body.appendChild(imageReplaceOverlay);
+    document.body.appendChild(imageReplaceCloseButton);
+    document.body.appendChild(infoPanel);
+    
+    imageReplaceOverlay._infoPanel = infoPanel;
+}
+
+// Deactivate image replace mode
+function deactivateImageReplaceMode() {
+    imageReplaceMode = false;
+    
+    if (currentReplaceHighlightedElement) {
+        removeReplaceHighlight(currentReplaceHighlightedElement);
+        currentReplaceHighlightedElement = null;
+    }
+    
+    // Remove ESC key listener
+    if (imageReplaceOverlay && imageReplaceOverlay._escHandler) {
+        document.removeEventListener('keydown', imageReplaceOverlay._escHandler);
+    }
+    
+    if (imageReplaceOverlay) {
+        // Remove info panel first
+        if (imageReplaceOverlay._infoPanel) {
+            imageReplaceOverlay._infoPanel.remove();
+        }
+        imageReplaceOverlay.remove();
+        imageReplaceOverlay = null;
+    }
+    
+    if (imageReplaceCloseButton) {
+        imageReplaceCloseButton.remove();
+        imageReplaceCloseButton = null;
+    }
+}
+
+// Find and highlight image for replace
+function findAndHighlightReplaceImage(mouseX, mouseY) {
+    const element = document.elementFromPoint(mouseX, mouseY);
+    
+    if (!element) return;
+    
+    // Use the same advanced algorithm as image picker mode
+    const imageElement = findNearestImageElementForReplace(element, mouseX, mouseY);
+    
+    // If found same element, return
+    if (imageElement === currentReplaceHighlightedElement) {
+        return;
+    }
+    
+    // Remove old highlight
+    if (currentReplaceHighlightedElement) {
+        removeReplaceHighlight(currentReplaceHighlightedElement);
+    }
+    
+    // Add new highlight
+    if (imageElement) {
+        currentReplaceHighlightedElement = imageElement;
+        addReplaceHighlight(imageElement);
+    } else {
+        currentReplaceHighlightedElement = null;
+    }
+}
+
+// Find nearest image element for replace (same as picker mode)
+function findNearestImageElementForReplace(startElement, mouseX, mouseY) {
+    const candidates = [];
+    
+    // 1. Traverse up from start element (parent chain)
+    let element = startElement;
+    while (element && element !== document.body) {
+        // IMG tag check
+        if (element.tagName === 'IMG' && element.src) {
+            candidates.push({
+                element: element,
+                distance: calculateDistanceForReplace(element, mouseX, mouseY),
+                type: 'img'
+            });
+        }
+        
+        // Background image check
+        const bgImage = window.getComputedStyle(element).backgroundImage;
+        if (bgImage && bgImage !== 'none' && bgImage.includes('url')) {
+            candidates.push({
+                element: element,
+                distance: calculateDistanceForReplace(element, mouseX, mouseY),
+                type: 'background'
+            });
+        }
+        
+        element = element.parentElement;
+    }
+    
+    // 2. Check all IMG elements in visible area
+    const allImages = document.querySelectorAll('img[src]');
+    allImages.forEach(img => {
+        const rect = img.getBoundingClientRect();
+        
+        // Check if in visible area
+        if (rect.width > 0 && rect.height > 0 && 
+            rect.top < window.innerHeight && 
+            rect.bottom > 0 &&
+            rect.left < window.innerWidth && 
+            rect.right > 0) {
+            
+            const distance = calculateDistanceForReplace(img, mouseX, mouseY);
+            if (distance < 500) { // Within 500px
+                candidates.push({
+                    element: img,
+                    distance: distance,
+                    type: 'img'
+                });
+            }
+        }
+    });
+    
+    // 3. Search all elements for background-image (visible ones)
+    const allElements = document.querySelectorAll('*');
+    allElements.forEach(el => {
+        const rect = el.getBoundingClientRect();
+        
+        // Check if visible and large enough
+        if (rect.width > 10 && rect.height > 10 && 
+            rect.top < window.innerHeight && 
+            rect.bottom > 0 &&
+            rect.left < window.innerWidth && 
+            rect.right > 0) {
+            
+            const bgImage = window.getComputedStyle(el).backgroundImage;
+            if (bgImage && bgImage !== 'none' && bgImage.includes('url')) {
+                const distance = calculateDistanceForReplace(el, mouseX, mouseY);
+                if (distance < 500) { // Within 500px
+                    candidates.push({
+                        element: el,
+                        distance: distance,
+                        type: 'background'
+                    });
+                }
+            }
+        }
+    });
+    
+    // Remove duplicates (same element may be added more than once)
+    const uniqueCandidates = [];
+    const seenElements = new Set();
+    
+    candidates.forEach(candidate => {
+        if (!seenElements.has(candidate.element)) {
+            seenElements.add(candidate.element);
+            uniqueCandidates.push(candidate);
+        }
+    });
+    
+    // Return the nearest one
+    if (uniqueCandidates.length === 0) return null;
+    
+    uniqueCandidates.sort((a, b) => a.distance - b.distance);
+    
+    return uniqueCandidates[0].element;
+}
+
+// Calculate distance between element and mouse for replace
+function calculateDistanceForReplace(element, mouseX, mouseY) {
+    const rect = element.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    
+    return Math.sqrt(
+        Math.pow(centerX - mouseX, 2) + 
+        Math.pow(centerY - mouseY, 2)
+    );
+}
+
+// Add replace highlight
+function addReplaceHighlight(element) {
+    element.style.outline = '4px solid #2196F3';
+    element.style.outlineOffset = '2px';
+    element.style.boxShadow = '0 0 20px rgba(33, 150, 243, 0.8)';
+    element.style.transition = 'all 0.2s ease';
+}
+
+// Remove replace highlight
+function removeReplaceHighlight(element) {
+    element.style.outline = '';
+    element.style.outlineOffset = '';
+    element.style.boxShadow = '';
+}
+
+// Replace image with clipboard
+async function replaceImageWithClipboard(element) {
+    try {
+        const items = await navigator.clipboard.read();
+        
+        for (const item of items) {
+            const imageTypes = item.types.filter(type => type.startsWith('image/'));
+            
+            if (imageTypes.length > 0) {
+                const imageType = imageTypes[0];
+                const blob = await item.getType(imageType);
+                
+                // Convert blob to data URL
+                const reader = new FileReader();
+                reader.readAsDataURL(blob);
+                
+                reader.onload = () => {
+                    const dataUrl = reader.result;
+                    
+                    // Replace image source
+                    if (element.tagName === 'IMG') {
+                        // Store original attributes (don't touch them)
+                        const originalSrc = element.src;
+                        
+                        // Only change src
+                        element.src = dataUrl;
+                        
+                        // If has srcset, update it too
+                        if (element.hasAttribute('srcset')) {
+                            element.srcset = dataUrl;
+                        }
+                        
+                        console.log('✓ Image src replaced:', originalSrc, '->', 'data:image/...');
+                    } else {
+                        // Background image
+                        element.style.backgroundImage = `url("${dataUrl}")`;
+                        console.log('✓ Background image replaced');
+                    }
+                    
+                    showImageReplaceNotification('✓ Image replaced successfully!', 'success');
+                    
+                    // Continue mode (don't close)
+                    removeReplaceHighlight(element);
+                    currentReplaceHighlightedElement = null;
+                };
+                
+                reader.onerror = () => {
+                    showImageReplaceNotification('❌ Failed to read clipboard image', 'error');
+                };
+                
+                return;
+            }
+        }
+        
+        showImageReplaceNotification('❌ No image in clipboard', 'error');
+        
+    } catch (error) {
+        console.error('Replace image error:', error);
+        showImageReplaceNotification('❌ Failed to replace image', 'error');
+    }
+}
+
+// Show notification for image replace
+function showImageReplaceNotification(message, type) {
+    const notification = document.createElement('div');
+    notification.textContent = message;
+    notification.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: 20px 40px;
+        background: ${type === 'success' ? '#4CAF50' : '#f44336'};
+        color: white;
+        font-size: 18px;
+        font-weight: bold;
+        border-radius: 8px;
+        z-index: 99999999;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        animation: fadeInOut 1s ease-in-out;
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.remove();
     }, 1000);
 }
 
@@ -1723,6 +2179,9 @@ async function openImageEditor(blob, format) {
                     <div style="display: flex; gap: 12px;">
                         <button class="editor-btn editor-btn-secondary" id="download-image" title="Download edited image">
                             ⬇️ Download
+                        </button>
+                        <button class="editor-btn editor-btn-secondary" id="copy-to-clipboard" title="Copy edited image to clipboard">
+                            📋 Copy
                         </button>
                         <button class="editor-btn editor-btn-success" id="copy-edited">
                             ✓ Use Edited Image
@@ -2539,6 +2998,85 @@ async function openImageEditor(blob, format) {
             editor.querySelector('#saved-settings-section').style.display = 'none';
         });
         
+        // Copy to Clipboard button
+        editor.querySelector('#copy-to-clipboard').addEventListener('click', async () => {
+            try {
+                const exportedBlob = await exportImage(true);
+                
+                // Copy to clipboard
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        [exportedBlob.type]: exportedBlob
+                    })
+                ]);
+                
+                // Show success notification
+                const notification = document.createElement('div');
+                notification.style.cssText = `
+                    position: fixed; top: 20px; right: 20px; z-index: 1000000;
+                    background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+                    color: white; padding: 16px 24px; border-radius: 12px;
+                    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                    font-size: 14px; font-weight: 500;
+                    animation: slideIn 0.3s ease-out;
+                `;
+                const extension = settings.outputFormat === 'jpeg' ? 'jpg' : settings.outputFormat;
+                const qualityInfo = (settings.outputFormat === 'jpeg' || settings.outputFormat === 'webp') 
+                    ? `-q${settings.quality}` 
+                    : '';
+                notification.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="font-size: 20px;">✓</span>
+                        <div>
+                            <div style="font-weight: 600;">Copied to Clipboard!</div>
+                            <div style="font-size: 12px; opacity: 0.9; margin-top: 2px;">
+                                ${extension.toUpperCase()} • ${currentImage.width}x${currentImage.height}${qualityInfo ? ` • Quality ${settings.quality}%` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(notification);
+                
+                setTimeout(() => {
+                    notification.style.animation = 'slideOut 0.3s ease-in';
+                    setTimeout(() => notification.remove(), 300);
+                }, 3000);
+                
+            } catch (error) {
+                console.error('Failed to copy to clipboard:', error);
+                
+                // Show error notification
+                const notification = document.createElement('div');
+                notification.style.cssText = `
+                    position: fixed; top: 20px; right: 20px; z-index: 1000000;
+                    background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+                    color: white; padding: 16px 24px; border-radius: 12px;
+                    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                    font-size: 14px; font-weight: 500;
+                    animation: slideIn 0.3s ease-out;
+                `;
+                notification.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="font-size: 20px;">✕</span>
+                        <div>
+                            <div style="font-weight: 600;">Failed to copy!</div>
+                            <div style="font-size: 12px; opacity: 0.9; margin-top: 2px;">
+                                ${error.message}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(notification);
+                
+                setTimeout(() => {
+                    notification.style.animation = 'slideOut 0.3s ease-in';
+                    setTimeout(() => notification.remove(), 300);
+                }, 3000);
+            }
+        });
+        
         // Download button
         editor.querySelector('#download-image').addEventListener('click', async () => {
             // Log current settings for debugging
@@ -2642,4 +3180,45 @@ async function openImageEditor(blob, format) {
         };
         document.addEventListener('keydown', escHandler);
     });
+}
+
+// Handle image editor request from popup
+async function handleOpenImageEditorFromPopup(request, sendResponse) {
+    try {
+        const { imageData, imageType } = request;
+        
+        // Convert base64 to blob
+        const response = await fetch(imageData);
+        const blob = await response.blob();
+        
+        // Get format from MIME type
+        const format = imageType.split('/')[1] || 'png';
+        
+        // Open the image editor
+        const editedResult = await openImageEditor(blob, format);
+        
+        if (editedResult) {
+            // Copy edited image to clipboard
+            try {
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        [editedResult.blob.type]: editedResult.blob
+                    })
+                ]);
+                
+                showNotification('✓ Edited image copied to clipboard!', 'success');
+                sendResponse({ success: true, message: 'Image edited and copied to clipboard' });
+            } catch (clipboardError) {
+                console.error('Clipboard write error:', clipboardError);
+                showNotification('⚠️ Image edited but failed to copy to clipboard', 'error');
+                sendResponse({ success: true, message: 'Image edited but clipboard update failed' });
+            }
+        } else {
+            sendResponse({ success: false, message: 'Editor closed without saving' });
+        }
+        
+    } catch (error) {
+        console.error('Error opening image editor:', error);
+        sendResponse({ success: false, error: error.message });
+    }
 }

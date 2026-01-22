@@ -64,6 +64,15 @@
                 </div>
             </div>
 
+            <div class="shortcut-section">
+                <h3>🔄 Image Replace Mode Shortcut:</h3>
+                <div class="shortcut-info">
+                    <p>Shortcut to replace page images with clipboard image:</p>
+                    <input type="text" id="replaceShortcutInput" class="shortcut-input" placeholder="Press shortcut keys..." readonly>
+                    <button id="clearReplaceShortcutBtn" class="btn btn-small">Clear</button>
+                </div>
+            </div>
+
             <div class="button-section">
                 <button id="activateBtn" class="btn btn-primary">
                     <span class="btn-icon">✓</span>
@@ -85,6 +94,10 @@
                 <div class="preview-info">
                     <span id="imageInfo"></span>
                 </div>
+                <button id="editClipboardBtn" class="btn-edit-clipboard" title="Edit Image">
+                    <span class="edit-icon">✏️</span>
+                    Edit Image
+                </button>
             </div>
         </div>
 
