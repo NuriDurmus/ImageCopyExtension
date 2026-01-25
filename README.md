@@ -1,6 +1,6 @@
 #  Image Copy & Converter Extension
 
-Chrome extension to paste clipboard images into file input fields, upload with format conversion, and select & copy images from any webpage.
+Chrome extension to paste clipboard images into file input fields, upload with format conversion, select & copy images from any webpage, and pick colors from screen.
 
 ##  Features
 
@@ -8,6 +8,9 @@ Chrome extension to paste clipboard images into file input fields, upload with f
 - **Integrated editing workspace**: Launch a modal editor from the extension to preview and fine-tune any clipboard image before upload.
 - **Direct editing from popup**: Click the "Edit Image" button in the popup to open the editor instantly without needing file input fields.
 - **Resize & crop toolset**: Resize with presets/custom ratios, crop with draggable handles, zoom controls, and undo history (Ctrl+Z) for safe experimentation.
+- **Paste from clipboard (NEW!)**: Press Ctrl+V inside the editor to paste and replace the current image with a new one from clipboard - perfect for quick image swapping.
+- **Smart undo with paste support**: Full undo history (up to 20 steps) works seamlessly with paste operations - replace an image and easily revert back with Ctrl+Z.
+- **Automatic memory management**: Editor automatically cleans up all undo history when closed to prevent memory leaks and ensure optimal performance.
 - **Custom output controls**: Select PNG/JPEG/WebP + quality slider; the editor always honors these settings when copying, downloading, or inserting images.
 - **Copy to clipboard**: Use the 📋 Copy button in the editor to copy the edited image directly to clipboard with all your adjustments applied.
 - **Fast downloads with feedback**: A dedicated ⬇️ Download button exports the edited result and shows a temporary confirmation banner with format/size meta.
@@ -38,6 +41,22 @@ Chrome extension to paste clipboard images into file input fields, upload with f
 - **ESC key support**: Press Escape or click the X button to exit the mode
 - **Real-time verification**: Shows success/error notifications for each replacement
 
+###  Color Picker Mode (NEW!)
+- **Pick colors from anywhere**: Extract color codes from any pixel on screen, including PDFs
+- **Keyboard shortcut activation**: Fully customizable shortcut (e.g., `Ctrl+Alt+C`)
+- **Auto-start color picking**: No need to click any button - picker activates instantly with the shortcut for instant color capture
+- **Modern EyeDropper API**: Uses browser's native EyeDropper API when available for system-wide color picking
+- **Fallback support**: Smart canvas-based color picking for PDFs and unsupported browsers
+- **Real-time color preview**: See live color preview as you move your mouse (mousemove tracking)
+- **Transparent overlay**: Crystal clear view of the screen without any darkening or visual interference
+- **Beautiful UI**: Gradient purple panel with real-time color preview and color values
+- **Multiple color formats**: Displays both HEX (#RRGGBB) and RGB values simultaneously
+- **Auto-copy to clipboard**: Selected color code automatically copies to clipboard - no extra click needed
+- **+ Icon tool**: Clean crosshair cursor for precise color picking
+- **ESC key support**: Press Escape or click the X button to exit mode
+- **PDF compatible**: Works perfectly with PDF documents in browser
+- **Non-blocking notifications**: Quick success messages that don't interfere with color picking
+
 ###  Supported Format Conversions
 
 - **Source formats**: PNG, JPEG, WebP, BMP, GIF
@@ -48,12 +67,15 @@ Chrome extension to paste clipboard images into file input fields, upload with f
 
 1. **Social media profile photo**: Copy → Edit (crop, resize, adjust) → Upload
 2. **Screenshot editing**: Take a screenshot with Windows+Shift+S → Edit instantly → Copy to clipboard or upload
-3. **Form filling**: Quickly upload your documents with format conversion
-4. **E-commerce**: Easily add product images with automatic resizing and optimization
-5. **File format conversion**: Copy image, change format, adjust quality, upload
-6. **Web image selection & copying**: Select and copy images from any webpage to clipboard
-7. **Bulk image replacement**: Replace placeholder images on a webpage with your own images from clipboard
-8. **Design mockups**: Quickly swap images in web designs to preview different options
+3. **Quick image swapping in editor**: Copy first image → Open editor → Paste second image with Ctrl+V → Compare and edit → Undo with Ctrl+Z if needed
+4. **Color matching**: Pick colors from design mockups, PDFs, or any webpage → Auto-copied to clipboard → Paste in design tools
+5. **Design color extraction**: Open PDF design file → Press color picker shortcut → Mouse over elements → Colors automatically copied
+6. **Form filling**: Quickly upload your documents with format conversion
+7. **E-commerce**: Easily add product images with automatic resizing and optimization
+8. **File format conversion**: Copy image, change format, adjust quality, upload
+9. **Web image selection & copying**: Select and copy images from any webpage to clipboard
+10. **Bulk image replacement**: Replace placeholder images on a webpage with your own images from clipboard
+11. **Design mockups**: Quickly swap images in web designs to preview different options
 
 ##  Installation
 
@@ -100,6 +122,8 @@ Chrome extension to paste clipboard images into file input fields, upload with f
    - Crop, resize, rotate, apply filters
    - Adjust output format (PNG/JPEG/WebP) and quality
    - Use the zoom controls for precise editing
+   - **Paste new images**: Press Ctrl+V to replace current image with a new one from clipboard
+   - **Full undo support**: Use Ctrl+Z to undo any changes including pasted images
 
 5. **Export your result**
    - **📋 Copy button**: Copy the edited image to clipboard
@@ -183,20 +207,71 @@ Chrome extension to paste clipboard images into file input fields, upload with f
 
 **Important**: This feature only replaces the image source (src, srcset, or background-image). All other HTML attributes, CSS classes, inline styles, and event handlers remain unchanged, ensuring the page functionality is preserved.
 
+### Color Picker Mode
+
+1. **Set up the shortcut** (first time only)
+   - Open the extension popup
+   - Find the "Color Picker Mode Shortcut" section
+   - Click in the input field and press your desired key combination (e.g., `Ctrl+Alt+C`)
+   - The shortcut is automatically saved
+
+2. **Activate the mode**
+   - Press your configured shortcut
+   - A beautiful gradient purple panel appears in the top-right corner
+   - The panel shows current color preview, HEX code, and RGB values
+
+3. **Pick colors from screen**
+   - **Auto-start feature**: The color picker starts automatically when you press the shortcut - no need to click any button
+   - Move your mouse around to see real-time color preview in the panel
+   
+   - **Method 1 (EyeDropper API)**: Modern browsers with EyeDropper support
+     - Your cursor becomes a system-wide color picker
+     - Click anywhere on the screen (even outside the browser) to capture the color
+     - Works on all visible content including images and backgrounds
+   
+   - **Method 2 (Canvas-based)**: If EyeDropper is not available or for PDF support
+     - Automatically activates when shortcut is pressed
+     - Move mouse over any element to see live color preview
+     - Click to select the color
+     - Automatically detects colors from backgrounds, borders, and images
+     - **Perfect for PDFs**: Works seamlessly with PDF documents in browser
+
+4. **Use the picked color**
+   - The color preview updates in real-time as you move your mouse
+   - HEX code is displayed (e.g., #FF5733)
+   - RGB values are shown (e.g., RGB(255, 87, 51))
+   - **Auto-copy**: Color code is automatically copied to clipboard when selected - ready to paste immediately
+   - Success notification appears briefly without interfering with your workflow
+
+5. **Exit the mode**
+   - Press the Escape key
+   - Or click the X button in the top-right of the color picker panel
+
+**Special Features**:
+- Works with PDF documents opened in browser
+- Supports both modern EyeDropper API and fallback canvas method
+- Auto-start: No button clicks needed - instantly starts picking when shortcut is pressed
+- Transparent overlay: See the exact colors without any screen darkening
+- Auto-copy: Color codes are automatically copied to clipboard
+- Real-time preview: Live color updates as you move your mouse
+- No permissions required - uses standard web APIs
+- Beautiful gradient UI with smooth animations
+
 ### Customize Shortcut
 
 1. Open extension popup
 2. Find the shortcut section you want to customize:
    - **"Image Picker Mode Shortcut"**: For copying images from pages
    - **"Image Replace Mode Shortcut"**: For replacing page images with clipboard content
+   - **"Color Picker Mode Shortcut"**: For picking colors from screen
 3. Click the input field in the desired section
-4. Press your desired key combination (e.g., `Ctrl+Shift+P`, `Ctrl+Alt+R`)
+4. Press your desired key combination (e.g., `Ctrl+Shift+P`, `Ctrl+Alt+R`, `Ctrl+Alt+C`)
 5. The shortcut is automatically saved and becomes active in all tabs immediately
 
 **Tips for choosing shortcuts**:
 - Use at least two modifier keys (Ctrl, Alt, Shift) plus a letter
 - Avoid conflicts with browser shortcuts (e.g., Ctrl+T, Ctrl+W)
-- Choose memorable combinations related to the action (R for Replace, S for Select)
+- Choose memorable combinations related to the action (R for Replace, S for Select, C for Color)
 
 ##  Settings
 

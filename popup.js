@@ -5,6 +5,7 @@ let currentImage = null;
 let conversionRules = []; // List of conversion rules
 let imagePickerShortcut = null; // Image picker mode shortcut
 let imageReplaceShortcut = null; // Image replace mode shortcut
+let colorPickerShortcut = null; // Color picker mode shortcut
 
 // DOM elements
 const activateBtn = document.getElementById('activateBtn');
@@ -24,6 +25,8 @@ const shortcutInput = document.getElementById('shortcutInput');
 const clearShortcutBtn = document.getElementById('clearShortcutBtn');
 const replaceShortcutInput = document.getElementById('replaceShortcutInput');
 const clearReplaceShortcutBtn = document.getElementById('clearReplaceShortcutBtn');
+const colorPickerShortcutInput = document.getElementById('colorPickerShortcutInput');
+const clearColorPickerShortcutBtn = document.getElementById('clearColorPickerShortcutBtn');
 const editClipboardBtn = document.getElementById('editClipboardBtn');
 
 // Check state when page loads
@@ -40,6 +43,7 @@ function setupEventListeners() {
     addRuleBtn.addEventListener('click', addConversionRule);
     clearShortcutBtn.addEventListener('click', clearShortcut);
     clearReplaceShortcutBtn.addEventListener('click', clearReplaceShortcut);
+    clearColorPickerShortcutBtn.addEventListener('click', clearColorPickerShortcut);
     editClipboardBtn.addEventListener('click', editClipboardImage);
     
     // Keydown listener for shortcut input
@@ -47,6 +51,9 @@ function setupEventListeners() {
     
     // Keydown listener for replace shortcut input
     replaceShortcutInput.addEventListener('keydown', captureReplaceShortcut);
+    
+    // Keydown listener for color picker shortcut input
+    colorPickerShortcutInput.addEventListener('keydown', captureColorPickerShortcut);
     
     targetFormatSelect.addEventListener('change', (e) => {
         const format = e.target.value;
@@ -69,14 +76,15 @@ async function saveState() {
         isActive: isActive,
         conversionRules: conversionRules,
         imagePickerShortcut: imagePickerShortcut,
-        imageReplaceShortcut: imageReplaceShortcut
+        imageReplaceShortcut: imageReplaceShortcut,
+        colorPickerShortcut: colorPickerShortcut
     };
     await chrome.storage.local.set(state);
 }
 
 // Load state
 async function loadState() {
-    const state = await chrome.storage.local.get(['isActive', 'conversionRules', 'imagePickerShortcut', 'imageReplaceShortcut']);
+    const state = await chrome.storage.local.get(['isActive', 'conversionRules', 'imagePickerShortcut', 'imageReplaceShortcut', 'colorPickerShortcut']);
     
     if (state.isActive) {
         isActive = true;
@@ -98,6 +106,11 @@ async function loadState() {
     if (state.imageReplaceShortcut) {
         imageReplaceShortcut = state.imageReplaceShortcut;
         displayReplaceShortcut();
+    }
+    
+    if (state.colorPickerShortcut) {
+        colorPickerShortcut = state.colorPickerShortcut;
+        displayColorPickerShortcut();
     }
 }
 
@@ -479,4 +492,61 @@ async function editClipboardImage() {
         console.error('Edit clipboard error:', error);
         showStatus('Failed to open editor', 'error');
     }
+}
+
+// ============================================
+// COLOR PICKER SHORTCUT MANAGEMENT
+// ============================================
+
+// Capture color picker shortcut
+function captureColorPickerShortcut(e) {
+    e.preventDefault();
+    
+    const keys = [];
+    if (e.ctrlKey) keys.push('Ctrl');
+    if (e.altKey) keys.push('Alt');
+    if (e.shiftKey) keys.push('Shift');
+    if (e.metaKey) keys.push('Meta');
+    
+    // Add special keys
+    if (e.key && !['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+        keys.push(e.key.toUpperCase());
+    }
+    
+    if (keys.length >= 2) { // At least modifier + one key
+        colorPickerShortcut = {
+            ctrl: e.ctrlKey,
+            alt: e.altKey,
+            shift: e.shiftKey,
+            meta: e.metaKey,
+            key: e.key,
+            code: e.code,
+            display: keys.join('+')
+        };
+        
+        displayColorPickerShortcut();
+        // Save to storage - background script will broadcast to all tabs
+        saveState();
+        
+        showStatus('✅ Color Picker shortcut saved: ' + colorPickerShortcut.display + ' (Available in all tabs)', 'success');
+    }
+}
+
+// Display color picker shortcut
+function displayColorPickerShortcut() {
+    if (colorPickerShortcut) {
+        colorPickerShortcutInput.value = colorPickerShortcut.display;
+    } else {
+        colorPickerShortcutInput.value = '';
+    }
+}
+
+// Clear color picker shortcut
+function clearColorPickerShortcut() {
+    colorPickerShortcut = null;
+    colorPickerShortcutInput.value = '';
+    // Save to storage - background script will broadcast to all tabs
+    saveState();
+    
+    showStatus('Color Picker shortcut cleared', 'info');
 }

@@ -7,7 +7,8 @@ chrome.runtime.onInstalled.addListener((details) => {
             isActive: false,
             conversionRules: [],
             imagePickerShortcut: null,
-            imageReplaceShortcut: null
+            imageReplaceShortcut: null,
+            colorPickerShortcut: null
         });
     } else if (details.reason === 'update') {
     }
@@ -32,6 +33,9 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
         }
         if (changes.imageReplaceShortcut) {
             updateMessage.changes.imageReplaceShortcut = changes.imageReplaceShortcut.newValue;
+        }
+        if (changes.colorPickerShortcut) {
+            updateMessage.changes.colorPickerShortcut = changes.colorPickerShortcut.newValue;
         }
         
         chrome.tabs.query({}, (tabs) => {

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Image Copy & Converter",
   "version": "1.0.0",
-  "description": "Upload copied images to file input fields, convert image formats, and select & copy images from any webpage.",
+  "description": "Upload copied images to file input fields, convert image formats, select & copy images from any webpage, and pick colors with eyedropper.",
   "permissions": [
     "activeTab",
     "scripting",

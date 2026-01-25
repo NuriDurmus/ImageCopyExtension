@@ -20,6 +20,13 @@ let currentReplaceHighlightedElement = null;
 let imageReplaceShortcut = null; // Shortcut set by user
 let replaceMouseMoveTimeout = null; // For debounce
 
+// Variables for Color Picker Mode
+let colorPickerMode = false;
+let colorPickerOverlay = null;
+let colorPickerUI = null;
+let colorPickerShortcut = null; // Shortcut set by user
+let eyeDropperSupported = typeof window.EyeDropper !== 'undefined';
+
 // Image Editor Settings Storage Key
 const IMAGE_EDITOR_SETTINGS_KEY = 'imageEditorLastSettings';
 
@@ -75,13 +82,17 @@ function initialize() {
                     imageReplaceShortcut = request.changes.imageReplaceShortcut;
                 }
                 
+                if ('colorPickerShortcut' in request.changes) {
+                    colorPickerShortcut = request.changes.colorPickerShortcut;
+                }
+                
                 sendResponse({ success: true });
             }
             return true;
         });
 
         // Check state when page loads
-        chrome.storage.local.get(['isActive', 'conversionRules', 'imagePickerShortcut', 'imageReplaceShortcut'], (result) => {
+        chrome.storage.local.get(['isActive', 'conversionRules', 'imagePickerShortcut', 'imageReplaceShortcut', 'colorPickerShortcut'], (result) => {
             if (result.isActive) {
                 isActive = true;
                 conversionRules = result.conversionRules || [];
@@ -92,6 +103,9 @@ function initialize() {
             }
             if (result.imageReplaceShortcut) {
                 imageReplaceShortcut = result.imageReplaceShortcut;
+            }
+            if (result.colorPickerShortcut) {
+                colorPickerShortcut = result.colorPickerShortcut;
             }
         });
     } else {
@@ -170,10 +184,56 @@ async function handleFileInputClick(event) {
     
     const input = event.target;
     
+    // Prevent recursive calls
+    if (input._isProcessing) return;
+    input._isProcessing = true;
+    
     // PREVENT event first (before async operations!)
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
+    
+    // Helper function to open native file dialog
+    const openNativeDialog = () => {
+        input.removeEventListener('click', handleFileInputClick, { capture: true });
+        
+        // Restore original click if exists
+        if (input._originalClick) {
+            const origClick = input._originalClick;
+            input.click = origClick;
+        }
+        
+        setTimeout(() => {
+            input.click();
+            
+            setTimeout(() => {
+                input.addEventListener('click', handleFileInputClick, { capture: true, passive: false });
+                // Re-apply override
+                if (input._originalClick) {
+                    input.click = function() {
+                        if (isActive && !input._isProcessing) {
+                            const fakeEvent = new MouseEvent('click', {
+                                bubbles: true,
+                                cancelable: true,
+                                view: window
+                            });
+                            Object.defineProperty(fakeEvent, 'target', { value: input, enumerable: true });
+                            handleFileInputClick(fakeEvent);
+                        } else if (input._originalClick) {
+                            input._originalClick();
+                        }
+                    };
+                }
+                input._isProcessing = false;
+            }, 100);
+        }, 50);
+    };
+    
+    // Check if document is focused - if not, open native dialog
+    if (!document.hasFocus()) {
+        openNativeDialog();
+        return;
+    }
     
     // Check if there is an image in the clipboard
     try {
@@ -190,18 +250,7 @@ async function handleFileInputClick(event) {
         
         // If no image in clipboard, open browser dialog MANUALLY
         if (!hasImage) {
-            // Temporarily remove listener
-            input.removeEventListener('click', handleFileInputClick, { capture: true });
-            
-            setTimeout(() => {
-                input.click();
-                
-                // Add listener back
-                setTimeout(() => {
-                    input.addEventListener('click', handleFileInputClick, { capture: true, passive: false });
-                }, 100);
-            }, 50);
-            
+            openNativeDialog();
             return;
         }
         
@@ -264,65 +313,20 @@ async function handleFileInputClick(event) {
                     }
                     
                 } else if (userChoice.action === 'browse') {
-                    
-                    // TEMPORARILY remove listener
-                    input.removeEventListener('click', handleFileInputClick, { capture: true });
-                    
-                    // FULLY restore override (restore original click method)
-                    if (input._originalClick) {
-                        input.click = input._originalClick;
-                    }
-                    
-                    // Click after short delay
-                    setTimeout(() => {
-                        input.click();
-                        
-                        // Restore everything right after
-                        setTimeout(() => {
-                            // Add listener back
-                            input.addEventListener('click', handleFileInputClick, { capture: true, passive: false });
-                            
-                            // Re-apply override
-                            if (!input._originalClick) {
-                                input._originalClick = input.click.bind(input);
-                            }
-                            input.click = function() {
-                                if (isActive) {
-                                    const fakeEvent = new MouseEvent('click', {
-                                        bubbles: true,
-                                        cancelable: true,
-                                        view: window
-                                    });
-                                    Object.defineProperty(fakeEvent, 'target', { value: input, enumerable: true });
-                                    handleFileInputClick(fakeEvent);
-                                } else {
-                                    input._originalClick();
-                                }
-                            };
-                            
-                        }, 100);
-                    }, 100);
-                } else {
+                    openNativeDialog();
+                    return;
                 }
                 
+                input._isProcessing = false;
                 return;
             }
         }
         
+        input._isProcessing = false;
+        
     } catch (error) {
-    console.warn('ℹ️ Clipboard access error, opening browser dialog manually:', error.message);
-        
-        // In case of error, open manually as well
-        input.removeEventListener('click', handleFileInputClick, { capture: true });
-        
-        setTimeout(() => {
-            input.click();
-            
-            setTimeout(() => {
-                input.addEventListener('click', handleFileInputClick, { capture: true, passive: false });
-            }, 100);
-        }, 50);
-        
+        // Silently handle clipboard errors and open native dialog
+        openNativeDialog();
         return;
     }
 }
@@ -865,6 +869,22 @@ document.addEventListener('keydown', (e) => {
         if (replaceMatches) {
             e.preventDefault();
             toggleImageReplaceMode();
+            return;
+        }
+    }
+    
+    // Check color picker shortcut
+    if (colorPickerShortcut) {
+        const colorMatches = 
+            (colorPickerShortcut.ctrl === e.ctrlKey) &&
+            (colorPickerShortcut.alt === e.altKey) &&
+            (colorPickerShortcut.shift === e.shiftKey) &&
+            (colorPickerShortcut.meta === e.metaKey) &&
+            (colorPickerShortcut.key === e.key || colorPickerShortcut.code === e.code);
+        
+        if (colorMatches) {
+            e.preventDefault();
+            toggleColorPickerMode();
             return;
         }
     }
@@ -1672,6 +1692,487 @@ function showImageReplaceNotification(message, type) {
     setTimeout(() => {
         notification.remove();
     }, 1000);
+}
+
+// ============================================
+// COLOR PICKER MODE - Eyedropper Tool
+// ============================================
+
+// Toggle color picker mode
+function toggleColorPickerMode() {
+    if (colorPickerMode) {
+        deactivateColorPickerMode();
+    } else {
+        activateColorPickerMode();
+    }
+}
+
+// Activate color picker mode
+async function activateColorPickerMode() {
+    if (!colorPickerShortcut) {
+        console.warn('⚠️ Color picker shortcut not set! Please set a shortcut from the popup.');
+        showColorPickerNotification('⚠️ Please set a shortcut from the popup first', 'error');
+        return;
+    }
+    
+    colorPickerMode = true;
+    
+    // Create overlay with + cursor icon
+    colorPickerOverlay = document.createElement('div');
+    colorPickerOverlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: transparent;
+        cursor: crosshair;
+        z-index: 999999998;
+    `;
+    
+    // Create color picker UI panel with + icon
+    colorPickerUI = document.createElement('div');
+    colorPickerUI.innerHTML = `
+        <div style="
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            z-index: 999999999;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-width: 280px;
+            backdrop-filter: blur(10px);
+        ">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 28px;">🎨</span>
+                    <span style="font-size: 18px; font-weight: 600;">Color Picker</span>
+                </div>
+                <button id="colorPickerCloseBtn" style="
+                    background: rgba(255,255,255,0.2);
+                    border: none;
+                    color: white;
+                    font-size: 20px;
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 50%;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: all 0.2s;
+                    font-weight: bold;
+                " onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">×</button>
+            </div>
+            
+            <div style="
+                background: rgba(255,255,255,0.15);
+                padding: 16px;
+                border-radius: 12px;
+                margin-bottom: 12px;
+                text-align: center;
+            ">
+                <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Selected Color</div>
+                <div id="colorPreview" style="
+                    width: 100%;
+                    height: 60px;
+                    background: #ffffff;
+                    border-radius: 8px;
+                    margin-bottom: 12px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                    border: 3px solid rgba(255,255,255,0.3);
+                "></div>
+                <div id="colorValue" style="
+                    font-size: 20px;
+                    font-weight: 700;
+                    font-family: 'Courier New', monospace;
+                    letter-spacing: 1px;
+                ">#FFFFFF</div>
+                <div id="colorRGB" style="
+                    font-size: 12px;
+                    opacity: 0.8;
+                    margin-top: 4px;
+                ">RGB(255, 255, 255)</div>
+            </div>
+            
+            <button id="pickColorBtn" style="
+                width: 100%;
+                padding: 14px;
+                background: rgba(255,255,255,0.25);
+                border: 2px solid rgba(255,255,255,0.4);
+                color: white;
+                font-size: 15px;
+                font-weight: 600;
+                border-radius: 10px;
+                cursor: pointer;
+                transition: all 0.2s;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                margin-bottom: 8px;
+            " onmouseover="this.style.background='rgba(255,255,255,0.35)'; this.style.transform='translateY(-2px)'" onmouseout="this.style.background='rgba(255,255,255,0.25)'; this.style.transform='translateY(0)'">
+                <span style="font-size: 20px;">➕</span>
+                <span>Pick Color from Screen</span>
+            </button>
+            
+            <button id="copyColorBtn" style="
+                width: 100%;
+                padding: 12px;
+                background: rgba(255,255,255,0.15);
+                border: 1px solid rgba(255,255,255,0.3);
+                color: white;
+                font-size: 14px;
+                font-weight: 500;
+                border-radius: 8px;
+                cursor: pointer;
+                transition: all 0.2s;
+            " onmouseover="this.style.background='rgba(255,255,255,0.25)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'">
+                📋 Copy Color Code
+            </button>
+            
+            <div style="
+                margin-top: 12px;
+                padding-top: 12px;
+                border-top: 1px solid rgba(255,255,255,0.2);
+                font-size: 12px;
+                opacity: 0.8;
+                text-align: center;
+            ">
+                Press <strong>ESC</strong> to close
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(colorPickerOverlay);
+    document.body.appendChild(colorPickerUI);
+    
+    // Add event listeners
+    const pickColorBtn = document.getElementById('pickColorBtn');
+    const copyColorBtn = document.getElementById('copyColorBtn');
+    const closeBtn = document.getElementById('colorPickerCloseBtn');
+    
+    pickColorBtn.addEventListener('click', pickColorWithEyedropper);
+    copyColorBtn.addEventListener('click', copyColorToClipboard);
+    closeBtn.addEventListener('click', deactivateColorPickerMode);
+    
+    // ESC key handler
+    const escHandler = (e) => {
+        if (e.key === 'Escape') {
+            deactivateColorPickerMode();
+        }
+    };
+    colorPickerOverlay._escHandler = escHandler;
+    document.addEventListener('keydown', escHandler);
+    
+    // Automatically start color picking
+    setTimeout(() => {
+        pickColorWithEyedropper();
+    }, 100);
+}
+
+// Deactivate color picker mode
+function deactivateColorPickerMode() {
+    colorPickerMode = false;
+    
+    if (colorPickerOverlay) {
+        // Remove ESC key listener
+        if (colorPickerOverlay._escHandler) {
+            document.removeEventListener('keydown', colorPickerOverlay._escHandler);
+        }
+        colorPickerOverlay.remove();
+        colorPickerOverlay = null;
+    }
+    
+    if (colorPickerUI) {
+        colorPickerUI.remove();
+        colorPickerUI = null;
+    }
+}
+
+// Pick color using EyeDropper API
+async function pickColorWithEyedropper() {
+    try {
+        // Check if EyeDropper API is supported
+        if (!window.EyeDropper) {
+            // Fallback: Use canvas-based color picking for PDFs and unsupported browsers
+            await pickColorFromCanvas();
+            return;
+        }
+        
+        const eyeDropper = new EyeDropper();
+        const result = await eyeDropper.open();
+        
+        if (result && result.sRGBHex) {
+            updateColorDisplay(result.sRGBHex);
+            // Otomatik clipboard'a kopyala
+            try {
+                await navigator.clipboard.writeText(result.sRGBHex);
+                showColorPickerNotification('✓ Color copied to clipboard!', 'success', 1500);
+            } catch (error) {
+                console.error('Failed to copy color:', error);
+                showColorPickerNotification('✓ Color picked successfully!', 'success', 1500);
+            }
+            // Reset cursor to default after picking
+            if (colorPickerOverlay) {
+                colorPickerOverlay.style.cursor = 'default';
+            }
+        }
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('EyeDropper error:', error);
+            // Try canvas fallback
+            await pickColorFromCanvas();
+        }
+    }
+}
+
+// Fallback: Canvas-based color picking (works with PDFs and all content)
+async function pickColorFromCanvas() {
+    return new Promise((resolve, reject) => {
+        showColorPickerNotification('📍 Click anywhere to pick color', 'info');
+        
+        // Create a temporary handler for clicking
+        const clickHandler = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            try {
+                // Capture the entire screen using screenshot
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Set canvas size to viewport
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                
+                // Use html2canvas or capture via tab capture API
+                // For now, we'll use a different approach: capture from the clicked element
+                const x = e.clientX;
+                const y = e.clientY;
+                
+                // Try to get color from element at point
+                const element = document.elementFromPoint(x, y);
+                if (element) {
+                    const color = getColorAtPoint(element, x, y);
+                    if (color) {
+                        updateColorDisplay(color);
+                        // Otomatik clipboard'a kopyala
+                        try {
+                            await navigator.clipboard.writeText(color);
+                            showColorPickerNotification('✓ Color copied to clipboard!', 'success', 1500);
+                        } catch (error) {
+                            console.error('Failed to copy color:', error);
+                            showColorPickerNotification('✓ Color picked successfully!', 'success', 1500);
+                        }
+                        // Reset cursor to default after picking
+                        if (colorPickerOverlay) {
+                            colorPickerOverlay.style.cursor = 'default';
+                        }
+                    }
+                }
+                
+                // Remove the click handler
+                colorPickerOverlay.removeEventListener('click', clickHandler);
+                resolve();
+            } catch (error) {
+                console.error('Canvas color pick error:', error);
+                showColorPickerNotification('❌ Failed to pick color', 'error');
+                colorPickerOverlay.removeEventListener('click', clickHandler);
+                reject(error);
+            }
+        };
+        
+        // Add click listener to overlay
+        if (colorPickerOverlay) {
+            colorPickerOverlay.addEventListener('click', clickHandler, { once: true });
+        }
+    });
+}
+
+// Get color at specific point from element
+function getColorAtPoint(element, x, y) {
+    try {
+        // Try to get computed background color
+        const computedStyle = window.getComputedStyle(element);
+        let color = computedStyle.backgroundColor;
+        
+        // If transparent or rgba(0,0,0,0), try parent elements
+        if (color === 'transparent' || color === 'rgba(0, 0, 0, 0)') {
+            let parent = element.parentElement;
+            while (parent && parent !== document.body) {
+                const parentStyle = window.getComputedStyle(parent);
+                color = parentStyle.backgroundColor;
+                if (color !== 'transparent' && color !== 'rgba(0, 0, 0, 0)') {
+                    break;
+                }
+                parent = parent.parentElement;
+            }
+        }
+        
+        // Try to get color from image if element is an image
+        if (element.tagName === 'IMG' || computedStyle.backgroundImage !== 'none') {
+            // For images, we need to use canvas to get pixel color
+            return getColorFromImage(element, x, y);
+        }
+        
+        // Convert rgb/rgba to hex
+        if (color && color.startsWith('rgb')) {
+            return rgbToHex(color);
+        }
+        
+        return color || '#FFFFFF';
+    } catch (error) {
+        console.error('Error getting color:', error);
+        return '#FFFFFF';
+    }
+}
+
+// Get color from image element
+function getColorFromImage(element, x, y) {
+    try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        let img;
+        if (element.tagName === 'IMG') {
+            img = element;
+        } else {
+            // Try to get background image
+            const bgImage = window.getComputedStyle(element).backgroundImage;
+            const urlMatch = bgImage.match(/url\(['"]?([^'"]+)['"]?\)/);
+            if (urlMatch) {
+                img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.src = urlMatch[1];
+            }
+        }
+        
+        if (img && img.complete) {
+            const rect = element.getBoundingClientRect();
+            const relX = x - rect.left;
+            const relY = y - rect.top;
+            
+            canvas.width = img.naturalWidth || img.width;
+            canvas.height = img.naturalHeight || img.height;
+            ctx.drawImage(img, 0, 0);
+            
+            // Calculate position on the image
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const pixelX = Math.floor(relX * scaleX);
+            const pixelY = Math.floor(relY * scaleY);
+            
+            const pixel = ctx.getImageData(pixelX, pixelY, 1, 1).data;
+            return `#${componentToHex(pixel[0])}${componentToHex(pixel[1])}${componentToHex(pixel[2])}`;
+        }
+    } catch (error) {
+        console.error('Error getting color from image:', error);
+    }
+    
+    return null;
+}
+
+// Convert RGB to Hex
+function rgbToHex(rgb) {
+    const match = rgb.match(/\d+/g);
+    if (match && match.length >= 3) {
+        const r = parseInt(match[0]);
+        const g = parseInt(match[1]);
+        const b = parseInt(match[2]);
+        return `#${componentToHex(r)}${componentToHex(g)}${componentToHex(b)}`;
+    }
+    return '#000000';
+}
+
+// Convert color component to hex
+function componentToHex(c) {
+    const hex = c.toString(16);
+    return hex.length === 1 ? '0' + hex : hex;
+}
+
+// Hex to RGB
+function hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+    } : null;
+}
+
+// Update color display in UI
+function updateColorDisplay(hexColor) {
+    const colorPreview = document.getElementById('colorPreview');
+    const colorValue = document.getElementById('colorValue');
+    const colorRGB = document.getElementById('colorRGB');
+    
+    if (colorPreview && colorValue && colorRGB) {
+        colorPreview.style.background = hexColor;
+        colorValue.textContent = hexColor.toUpperCase();
+        
+        const rgb = hexToRgb(hexColor);
+        if (rgb) {
+            colorRGB.textContent = `RGB(${rgb.r}, ${rgb.g}, ${rgb.b})`;
+        }
+    }
+}
+
+// Copy color to clipboard
+async function copyColorToClipboard() {
+    const colorValue = document.getElementById('colorValue');
+    if (!colorValue) return;
+    
+    const color = colorValue.textContent;
+    
+    try {
+        await navigator.clipboard.writeText(color);
+        showColorPickerNotification('✓ Color copied to clipboard!', 'success');
+    } catch (error) {
+        console.error('Failed to copy color:', error);
+        // Fallback method
+        const textarea = document.createElement('textarea');
+        textarea.value = color;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        showColorPickerNotification('✓ Color copied to clipboard!', 'success');
+    }
+}
+
+// Show notification for color picker
+function showColorPickerNotification(message, type, duration = 1000) {
+    const notification = document.createElement('div');
+    notification.textContent = message;
+    notification.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: 20px 40px;
+        background: ${type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : '#2196F3'};
+        color: white;
+        font-size: 18px;
+        font-weight: bold;
+        border-radius: 8px;
+        z-index: 999999999;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        if (notification && notification.parentNode) {
+            notification.remove();
+        }
+    }, duration);
 }
 
 // ============================================
@@ -2957,6 +3458,51 @@ async function openImageEditor(blob, format) {
         };
         document.addEventListener('keydown', undoKeyHandler);
         
+        // Keyboard shortcut for paste (Ctrl+V)
+        const pasteKeyHandler = async (e) => {
+            if (e.ctrlKey && e.key === 'v') {
+                e.preventDefault();
+                try {
+                    if (!navigator.clipboard || !document.hasFocus()) {
+                        return;
+                    }
+                    
+                    const clipboardItems = await navigator.clipboard.read();
+                    for (const item of clipboardItems) {
+                        for (const type of item.types) {
+                            if (type.startsWith('image/')) {
+                                const blob = await item.getType(type);
+                                const reader = new FileReader();
+                                reader.onload = (event) => {
+                                    const img = new Image();
+                                    img.onload = () => {
+                                        // Save current state before replacing
+                                        saveToHistory();
+                                        
+                                        // Replace current image
+                                        currentImage = img;
+                                        settings.width = img.naturalWidth;
+                                        settings.height = img.naturalHeight;
+                                        drawImage();
+                                        updateImageInfo();
+                                        updateResizeInputs();
+                                        initCropArea();
+                                        clearPresetSelection();
+                                    };
+                                    img.src = event.target.result;
+                                };
+                                reader.readAsDataURL(blob);
+                                return;
+                            }
+                        }
+                    }
+                } catch (err) {
+                    // Silently fail if clipboard is empty or access denied
+                }
+            }
+        };
+        document.addEventListener('keydown', pasteKeyHandler);
+        
         // Reset button
         editor.querySelector('#reset-btn').addEventListener('click', () => {
             // Save current state before reset
@@ -3138,10 +3684,14 @@ async function openImageEditor(blob, format) {
         // Copy buttons
         // Cleanup function
         function cleanupEditor() {
+            // Clear undo history to free memory
+            history = [];
+            
             URL.revokeObjectURL(imageUrl);
             editorStyles.remove();
             editor.remove();
             document.removeEventListener('keydown', undoKeyHandler);
+            document.removeEventListener('keydown', pasteKeyHandler);
         }
         
         editor.querySelector('#copy-edited').addEventListener('click', async () => {
