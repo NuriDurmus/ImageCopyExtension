@@ -30,6 +30,15 @@ let eyeDropperSupported = typeof window.EyeDropper !== 'undefined';
 // Image Editor Settings Storage Key
 const IMAGE_EDITOR_SETTINGS_KEY = 'imageEditorLastSettings';
 
+// Check if Chrome extension context is still valid
+function isChromeContextValid() {
+    try {
+        return !!(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id);
+    } catch (e) {
+        return false;
+    }
+}
+
 // Initialization function
 function initialize() {
     if (isInitialized) {
@@ -2182,13 +2191,25 @@ function showColorPickerNotification(message, type, duration = 1000) {
 // Load saved settings
 async function loadEditorSettings() {
     return new Promise((resolve) => {
-        if (typeof chrome !== 'undefined' && chrome.storage) {
-            chrome.storage.local.get([IMAGE_EDITOR_SETTINGS_KEY], (result) => {
-                resolve(result[IMAGE_EDITOR_SETTINGS_KEY] || null);
-            });
-        } else {
-            const saved = localStorage.getItem(IMAGE_EDITOR_SETTINGS_KEY);
-            resolve(saved ? JSON.parse(saved) : null);
+        try {
+            if (isChromeContextValid() && chrome.storage) {
+                chrome.storage.local.get([IMAGE_EDITOR_SETTINGS_KEY], (result) => {
+                    if (chrome.runtime.lastError) {
+                        resolve(null);
+                        return;
+                    }
+                    resolve(result[IMAGE_EDITOR_SETTINGS_KEY] || null);
+                });
+            } else {
+                try {
+                    const saved = localStorage.getItem(IMAGE_EDITOR_SETTINGS_KEY);
+                    resolve(saved ? JSON.parse(saved) : null);
+                } catch (e) {
+                    resolve(null);
+                }
+            }
+        } catch (e) {
+            resolve(null);
         }
     });
 }
@@ -2196,10 +2217,19 @@ async function loadEditorSettings() {
 // Save editor settings
 async function saveEditorSettings(settings) {
     return new Promise((resolve) => {
-        if (typeof chrome !== 'undefined' && chrome.storage) {
-            chrome.storage.local.set({ [IMAGE_EDITOR_SETTINGS_KEY]: settings }, resolve);
-        } else {
-            localStorage.setItem(IMAGE_EDITOR_SETTINGS_KEY, JSON.stringify(settings));
+        try {
+            if (isChromeContextValid() && chrome.storage) {
+                chrome.storage.local.set({ [IMAGE_EDITOR_SETTINGS_KEY]: settings }, () => {
+                    if (chrome.runtime.lastError) { /* ignore */ }
+                    resolve();
+                });
+            } else {
+                try {
+                    localStorage.setItem(IMAGE_EDITOR_SETTINGS_KEY, JSON.stringify(settings));
+                } catch (e) { /* ignore */ }
+                resolve();
+            }
+        } catch (e) {
             resolve();
         }
     });
@@ -2208,10 +2238,19 @@ async function saveEditorSettings(settings) {
 // Clear editor settings
 async function clearEditorSettings() {
     return new Promise((resolve) => {
-        if (typeof chrome !== 'undefined' && chrome.storage) {
-            chrome.storage.local.remove([IMAGE_EDITOR_SETTINGS_KEY], resolve);
-        } else {
-            localStorage.removeItem(IMAGE_EDITOR_SETTINGS_KEY);
+        try {
+            if (isChromeContextValid() && chrome.storage) {
+                chrome.storage.local.remove([IMAGE_EDITOR_SETTINGS_KEY], () => {
+                    if (chrome.runtime.lastError) { /* ignore */ }
+                    resolve();
+                });
+            } else {
+                try {
+                    localStorage.removeItem(IMAGE_EDITOR_SETTINGS_KEY);
+                } catch (e) { /* ignore */ }
+                resolve();
+            }
+        } catch (e) {
             resolve();
         }
     });
@@ -3734,6 +3773,17 @@ async function openImageEditor(blob, format) {
 
 // Handle image editor request from popup
 async function handleOpenImageEditorFromPopup(request, sendResponse) {
+    // Safe sendResponse wrapper - won't throw if context is invalidated
+    function safeSendResponse(data) {
+        try {
+            if (isChromeContextValid()) {
+                sendResponse(data);
+            }
+        } catch (e) {
+            // Extension context invalidated - silently ignore
+        }
+    }
+    
     try {
         const { imageData, imageType } = request;
         
@@ -3757,18 +3807,17 @@ async function handleOpenImageEditorFromPopup(request, sendResponse) {
                 ]);
                 
                 showNotification('✓ Edited image copied to clipboard!', 'success');
-                sendResponse({ success: true, message: 'Image edited and copied to clipboard' });
+                safeSendResponse({ success: true, message: 'Image edited and copied to clipboard' });
             } catch (clipboardError) {
-                console.error('Clipboard write error:', clipboardError);
                 showNotification('⚠️ Image edited but failed to copy to clipboard', 'error');
-                sendResponse({ success: true, message: 'Image edited but clipboard update failed' });
+                safeSendResponse({ success: true, message: 'Image edited but clipboard update failed' });
             }
         } else {
-            sendResponse({ success: false, message: 'Editor closed without saving' });
+            safeSendResponse({ success: false, message: 'Editor closed without saving' });
         }
         
     } catch (error) {
         console.error('Error opening image editor:', error);
-        sendResponse({ success: false, error: error.message });
+        safeSendResponse({ success: false, error: error.message });
     }
 }

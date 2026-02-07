@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Image Copy & Converter",
-  "version": "1.0.0",
-  "description": "Upload copied images to file input fields, convert image formats, select & copy images from any webpage, and pick colors with eyedropper.",
+  "version": "1.0.2",
+  "description": "Upload copied images, convert formats, select & copy images from webpages, edit images, and pick colors with eyedropper.",
   "permissions": [
     "activeTab",
     "scripting",
@@ -30,6 +30,12 @@
       "js": ["content.js"],
       "run_at": "document_end",
       "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["editor.html", "content.js"],
+      "matches": ["<all_urls>"]
     }
   ],
   "icons": {

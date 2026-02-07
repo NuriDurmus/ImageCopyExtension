@@ -210,7 +210,8 @@ async function checkClipboard() {
         return false;
         
     } catch (error) {
-        console.error('Clipboard read error:', error);
+        // Silently ignore clipboard errors - they're common and harmless
+        // (happens when popup doesn't have focus or clipboard is empty)
         clipboardPreview.style.display = 'none';
         return false;
     }
@@ -380,67 +381,7 @@ async function editClipboardImage() {
     }
     
     try {
-        // Get all tabs and find a suitable one (web page, not extension/chrome pages)
-        const allTabs = await chrome.tabs.query({});
-        let targetTab = null;
-        let needsScriptInjection = false;
-        
-        // First try to find an active web page tab
-        const activeTabs = allTabs.filter(tab => 
-            tab.active && 
-            tab.url && 
-            (tab.url.startsWith('http://') || tab.url.startsWith('https://'))
-        );
-        
-        if (activeTabs.length > 0) {
-            targetTab = activeTabs[0];
-        } else {
-            // Find any web page tab
-            const webTabs = allTabs.filter(tab => 
-                tab.url && 
-                (tab.url.startsWith('http://') || tab.url.startsWith('https://'))
-            );
-            
-            if (webTabs.length > 0) {
-                targetTab = webTabs[0];
-                // Switch to that tab
-                await chrome.tabs.update(targetTab.id, { active: true });
-            } else {
-                // Create a new tab with a simple HTML page
-                targetTab = await chrome.tabs.create({ 
-                    url: 'data:text/html,<html><head><title>Image Editor</title></head><body style="margin:0;padding:0;background:#000;"></body></html>',
-                    active: true 
-                });
-                needsScriptInjection = true;
-                
-                // Wait for tab to be ready
-                await new Promise(resolve => setTimeout(resolve, 300));
-            }
-        }
-        
-        if (!targetTab || !targetTab.id) {
-            showStatus('Cannot find or create a suitable tab', 'error');
-            return;
-        }
-        
-        // If we created a new tab, inject content script
-        if (needsScriptInjection) {
-            try {
-                await chrome.scripting.executeScript({
-                    target: { tabId: targetTab.id },
-                    files: ['content.js']
-                });
-                
-                // Wait a bit for script to initialize
-                await new Promise(resolve => setTimeout(resolve, 200));
-            } catch (injectError) {
-                console.error('Failed to inject content script:', injectError);
-                showStatus('Failed to initialize editor', 'error');
-                return;
-            }
-        }
-        
-        // Convert blob to base64
+        // Convert blob to base64 first
         const reader = new FileReader();
         reader.readAsDataURL(currentImage);
         
@@ -448,39 +389,77 @@ async function editClipboardImage() {
             const base64Data = reader.result;
             const imageType = currentImage.type;
             
-            // Send message to content script to open editor
             try {
-                const response = await chrome.tabs.sendMessage(targetTab.id, {
-                    action: 'openImageEditor',
-                    imageData: base64Data,
-                    imageType: imageType
-                });
+                let targetTab = null;
                 
-                if (response && response.success) {
-                    showStatus('Editor opened successfully!', 'success');
+                // Get the active tab in the current window
+                const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                
+                if (activeTab && activeTab.url && 
+                    (activeTab.url.startsWith('http://') || activeTab.url.startsWith('https://') || activeTab.url.startsWith('file://'))) {
+                    targetTab = activeTab;
                 } else {
-                    showStatus('Editor opening...', 'success');
+                    // Active tab is restricted, find any usable tab in this window
+                    const windowTabs = await chrome.tabs.query({ currentWindow: true });
+                    const usableTab = windowTabs.find(tab => 
+                        tab.url && (tab.url.startsWith('http://') || tab.url.startsWith('https://') || tab.url.startsWith('file://'))
+                    );
+                    
+                    if (usableTab) {
+                        targetTab = usableTab;
+                        await chrome.tabs.update(targetTab.id, { active: true });
+                    } else {
+                        // No usable tab, create editor.html
+                        targetTab = await chrome.tabs.create({ 
+                            url: chrome.runtime.getURL('editor.html'),
+                            active: true 
+                        });
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
                 }
                 
-                // Close popup after a brief delay
-                setTimeout(() => {
-                    window.close();
-                }, 400);
-            } catch (error) {
-                console.error('Error sending message:', error);
-                // One more retry
-                setTimeout(async () => {
+                if (!targetTab || !targetTab.id) {
+                    showStatus('Cannot find or create a suitable tab', 'error');
+                    return;
+                }
+                
+                // Try to send message to content script
+                try {
+                    const response = await chrome.tabs.sendMessage(targetTab.id, {
+                        action: 'openImageEditor',
+                        imageData: base64Data,
+                        imageType: imageType
+                    });
+                    
+                    showStatus('Editor opening...', 'success');
+                    
+                    // Close popup after a brief delay
+                    setTimeout(() => {
+                        window.close();
+                    }, 300);
+                } catch (error) {
+                    // Content script might not be injected, try injecting it first
                     try {
+                        await chrome.scripting.executeScript({
+                            target: { tabId: targetTab.id },
+                            files: ['content.js']
+                        });
+                        await new Promise(resolve => setTimeout(resolve, 200));
+                        
                         await chrome.tabs.sendMessage(targetTab.id, {
                             action: 'openImageEditor',
                             imageData: base64Data,
                             imageType: imageType
                         });
+                        
                         setTimeout(() => window.close(), 300);
                     } catch (retryError) {
-                        showStatus('Failed to open editor. Try opening any webpage first.', 'error');
+                        showStatus('⚠️ Cannot open editor on this page. Please open a regular webpage.', 'error');
                     }
-                }, 300);
+                }
+                
+            } catch (error) {
+                showStatus('Failed to open editor', 'error');
             }
         };
         
@@ -489,7 +468,6 @@ async function editClipboardImage() {
         };
         
     } catch (error) {
-        console.error('Edit clipboard error:', error);
         showStatus('Failed to open editor', 'error');
     }
 }
