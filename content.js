@@ -255,6 +255,18 @@ async function handleFileInputClick(event) {
                 hasImage = true;
                 break;
             }
+
+            if (item.types.includes('text/plain')) {
+                try {
+                    const textBlob = await item.getType('text/plain');
+                    const textContent = await textBlob.text();
+                    if (textContent && textContent.trim().toLowerCase().includes('<svg')) {
+                        hasImage = true;
+                        break;
+                    }
+                } catch (e) {
+                }
+            }
         }
         
         // If no image in clipboard, open browser dialog MANUALLY
@@ -267,10 +279,25 @@ async function handleFileInputClick(event) {
         // Get the image
         for (const item of items) {
             const imageTypes = item.types.filter(type => type.startsWith('image/'));
-            
+            let imageType = null;
+            let blob = null;
+
             if (imageTypes.length > 0) {
-                const imageType = imageTypes[0];
-                let blob = await item.getType(imageType);
+                imageType = imageTypes[0];
+                blob = await item.getType(imageType);
+            } else if (item.types.includes('text/plain')) {
+                try {
+                    const textBlob = await item.getType('text/plain');
+                    const textContent = await textBlob.text();
+                    if (textContent && textContent.trim().toLowerCase().includes('<svg')) {
+                        imageType = 'image/svg+xml';
+                        blob = new Blob([textContent], { type: 'image/svg+xml' });
+                    }
+                } catch (e) {
+                }
+            }
+
+            if (blob && imageType) {
                 // Show modal
                 const userChoice = await showImageChoiceModal(blob, imageType);
                 
@@ -294,7 +321,7 @@ async function handleFileInputClick(event) {
                         blob = await convertImageFormat(blob, matchingRule.target, matchingRule.quality);
                         
                         const fileName = generateFileName(matchingRule.target);
-                        const mimeType = `image/${matchingRule.target}`;
+                        const mimeType = getMimeTypeForFormat(matchingRule.target);
                         const file = new File([blob], fileName, { type: mimeType });
                         
                         const dataTransfer = new DataTransfer();
@@ -308,7 +335,7 @@ async function handleFileInputClick(event) {
                     } else {
                         // If no rule or already edited, add as is
                         const fileName = generateFileName(currentFormat);
-                        const mimeType = `image/${currentFormat}`;
+                        const mimeType = getMimeTypeForFormat(currentFormat);
                         const file = new File([blob], fileName, { type: mimeType });
                         
                         const dataTransfer = new DataTransfer();
@@ -342,7 +369,7 @@ async function handleFileInputClick(event) {
 
 // Detect the real format of the blob (magic bytes check)
 async function detectImageFormat(blob) {
-    const arrayBuffer = await blob.slice(0, 12).arrayBuffer();
+    const arrayBuffer = await blob.slice(0, 512).arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
     
     // JPEG: FF D8 FF
@@ -365,6 +392,19 @@ async function detectImageFormat(blob) {
     // BMP: 42 4D
     if (bytes[0] === 0x42 && bytes[1] === 0x4D) {
         return 'bmp';
+    }
+    // SVG: Check for text-based format
+    try {
+        const textDecoder = new TextDecoder('utf-8');
+        const text = textDecoder.decode(bytes);
+        const trimmedText = text.trim().toLowerCase();
+        // Check for SVG tags or XML declaration with svg
+        if (trimmedText.startsWith('<svg') || 
+            trimmedText.startsWith('<?xml') && trimmedText.includes('<svg')) {
+            return 'svg';
+        }
+    } catch (e) {
+        // Not a valid text format
     }
     
     // Unknown format
@@ -636,14 +676,84 @@ async function showImageChoiceModal(blob, imageType) {
 
 // Convert image format
 async function convertImageFormat(blob, format, quality) {
+    // Detect source format first
+    const sourceFormat = await detectImageFormat(blob);
+    
     // If quality is 100% and target format is JPEG, copy original JPEG as is
     if (quality === 100 && format === 'jpeg') {
-        const sourceFormat = await detectImageFormat(blob);
         if (sourceFormat === 'jpeg') {
             return blob; // Return original blob as-is
         }
     }
     
+    // Special handling for SVG source
+    if (sourceFormat === 'svg') {
+        // SVG to raster conversion
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            const url = URL.createObjectURL(blob);
+            
+            img.onload = () => {
+                // Get SVG dimensions or use default
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width || 800;
+                canvas.height = img.height || 600;
+                
+                const ctx = canvas.getContext('2d');
+                // Fill with white background for formats that don't support transparency
+                if (format === 'jpeg' || format === 'bmp') {
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
+                ctx.drawImage(img, 0, 0);
+                
+                let mimeType;
+                switch (format) {
+                    case 'jpeg':
+                        mimeType = 'image/jpeg';
+                        break;
+                    case 'png':
+                        mimeType = 'image/png';
+                        break;
+                    case 'webp':
+                        mimeType = 'image/webp';
+                        break;
+                    case 'bmp':
+                        mimeType = 'image/bmp';
+                        break;
+                    case 'gif':
+                        mimeType = 'image/gif';
+                        break;
+                    default:
+                        mimeType = 'image/png';
+                }
+                
+                const qualityValue = (format === 'jpeg' || format === 'webp') ? quality / 100 : undefined;
+                
+                canvas.toBlob(
+                    (newBlob) => {
+                        URL.revokeObjectURL(url);
+                        if (newBlob) {
+                            resolve(newBlob);
+                        } else {
+                            reject(new Error('SVG conversion failed'));
+                        }
+                    },
+                    mimeType,
+                    qualityValue
+                );
+            };
+            
+            img.onerror = () => {
+                URL.revokeObjectURL(url);
+                reject(new Error('SVG load failed'));
+            };
+            
+            img.src = url;
+        });
+    }
+    
+    // Standard raster to raster conversion
     return new Promise((resolve, reject) => {
         const img = new Image();
         const url = URL.createObjectURL(blob);
@@ -672,6 +782,11 @@ async function convertImageFormat(blob, format, quality) {
                     break;
                 case 'gif':
                     mimeType = 'image/gif';
+                    break;
+                case 'svg':
+                    // Cannot convert raster to SVG
+                    mimeType = 'image/png';
+                    console.warn('⚠️ Raster to SVG conversion not supported, using PNG instead');
                     break;
                 default:
                     mimeType = 'image/png';
@@ -709,6 +824,13 @@ function generateFileName(format) {
     const timestamp = new Date().getTime();
     const randomStr = Math.random().toString(36).substring(2, 8);
     return `image_${timestamp}_${randomStr}.${format}`;
+}
+
+function getMimeTypeForFormat(format) {
+    if (format === 'svg') {
+        return 'image/svg+xml';
+    }
+    return `image/${format}`;
 }
 
 // Show notification
@@ -1044,10 +1166,14 @@ async function handleImagePickerClick(e) {
     
     try {
         // Copy image
-        await copyImageFromElement(currentHighlightedElement);
+        const format = await copyImageFromElement(currentHighlightedElement);
         
         // Show success message
-        showImagePickerNotification('✓ Image copied!', 'success');
+        if (format === 'svg') {
+            showImagePickerNotification('✓ SVG source code copied!', 'success');
+        } else {
+            showImagePickerNotification('✓ Image copied!', 'success');
+        }
         
         // Close mode
         setTimeout(() => deactivateImagePickerMode(), 500);
@@ -1057,13 +1183,22 @@ async function handleImagePickerClick(e) {
     }
 }
 
-// Find nearest image element (img or background-image)
+// Find nearest image element (img or background-image or svg)
 function findNearestImageElement(startElement, mouseX, mouseY) {
     const candidates = [];
     
     // 1. Traverse up from start element (parent chain)
     let element = startElement;
     while (element && element !== document.body) {
+        // SVG element check
+        if (element.tagName === 'svg' || element.tagName === 'SVG') {
+            candidates.push({
+                element: element,
+                distance: calculateDistance(element, mouseX, mouseY),
+                type: 'svg'
+            });
+        }
+        
         // IMG tag check
         if (element.tagName === 'IMG' && element.src) {
             candidates.push({
@@ -1086,7 +1221,30 @@ function findNearestImageElement(startElement, mouseX, mouseY) {
         element = element.parentElement;
     }
     
-    // 2. Check all IMG elements in visible area
+    // 2. Check all SVG elements in visible area
+    const allSvgs = document.querySelectorAll('svg');
+    allSvgs.forEach(svg => {
+        const rect = svg.getBoundingClientRect();
+        
+        // Check if in visible area
+        if (rect.width > 0 && rect.height > 0 && 
+            rect.top < window.innerHeight && 
+            rect.bottom > 0 &&
+            rect.left < window.innerWidth && 
+            rect.right > 0) {
+            
+            const distance = calculateDistance(svg, mouseX, mouseY);
+            if (distance < 500) { // Within 500px
+                candidates.push({
+                    element: svg,
+                    distance: distance,
+                    type: 'svg'
+                });
+            }
+        }
+    });
+    
+    // 3. Check all IMG elements in visible area
     const allImages = document.querySelectorAll('img[src]');
     allImages.forEach(img => {
         const rect = img.getBoundingClientRect();
@@ -1109,7 +1267,7 @@ function findNearestImageElement(startElement, mouseX, mouseY) {
         }
     });
     
-    // 3. Search all elements for background-image (visible ones)
+    // 4. Search all elements for background-image (visible ones)
     const allElements = document.querySelectorAll('*');
     allElements.forEach(el => {
         const rect = el.getBoundingClientRect();
@@ -1194,10 +1352,19 @@ function removeHighlight(element) {
 // Copy image from element
 async function copyImageFromElement(element) {
     let imageUrl = null;
+    let isSvgElement = false;
     
+    // Check if it's an SVG element
+    if (element.tagName === 'svg' || element.tagName === 'SVG') {
+        isSvgElement = true;
+    }
     // If IMG tag, get src directly
-    if (element.tagName === 'IMG') {
+    else if (element.tagName === 'IMG') {
         imageUrl = element.src;
+        // Check if it's an SVG image
+        if (imageUrl && (imageUrl.endsWith('.svg') || imageUrl.includes('svg'))) {
+            isSvgElement = true;
+        }
     } 
     // If background image, extract URL
     else {
@@ -1205,13 +1372,110 @@ async function copyImageFromElement(element) {
         const urlMatch = bgImage.match(/url\(['"]?([^'"]+)['"]?\)/);
         if (urlMatch) {
             imageUrl = urlMatch[1];
+            // Check if it's an SVG image
+            if (imageUrl && (imageUrl.endsWith('.svg') || imageUrl.includes('svg'))) {
+                isSvgElement = true;
+            }
         }
     }
     
-    if (!imageUrl) {
+    if (!imageUrl && !isSvgElement) {
         throw new Error('Image URL not found');
     }
     
+    // Handle SVG elements
+    if (isSvgElement) {
+        let svgData;
+        
+        // For inline SVG, serialize it
+        if (element.tagName === 'svg' || element.tagName === 'SVG') {
+            svgData = new XMLSerializer().serializeToString(element);
+        } 
+        // For SVG loaded from URL (img src or background-image)
+        else if (imageUrl) {
+            try {
+                const response = await fetch(imageUrl);
+                svgData = await response.text();
+            } catch (error) {
+                console.warn('⚠️ Could not fetch SVG, treating as regular image');
+                isSvgElement = false;
+            }
+        }
+        
+        if (isSvgElement && svgData) {
+            // Check if there's a conversion rule for SVG
+            const svgConversionRule = conversionRules.find(rule => 
+                rule.source === 'svg'
+            );
+            
+            if (!svgConversionRule) {
+                // No conversion rule, copy as SVG source code
+                await navigator.clipboard.writeText(svgData);
+                return 'svg';
+            }
+            
+            // Has conversion rule, convert to target format (PNG, JPEG, etc.)
+            const svgBlob = new Blob([svgData], { type: 'image/svg+xml' });
+            const img = new Image();
+            const url = URL.createObjectURL(svgBlob);
+            
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+                img.src = url;
+            });
+            
+            const canvas = document.createElement('canvas');
+            // For inline SVG
+            if (element.tagName === 'svg' || element.tagName === 'SVG') {
+                const bbox = element.getBBox();
+                canvas.width = bbox.width || element.clientWidth || 300;
+                canvas.height = bbox.height || element.clientHeight || 300;
+            } 
+            // For img or background-image
+            else {
+                canvas.width = img.width || element.clientWidth || 300;
+                canvas.height = img.height || element.clientHeight || 300;
+            }
+            
+            const ctx = canvas.getContext('2d');
+            
+            // Fill with white background for non-transparent formats
+            if (svgConversionRule.target === 'jpeg' || svgConversionRule.target === 'bmp') {
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            
+            ctx.drawImage(img, 0, 0);
+            URL.revokeObjectURL(url);
+            
+            // Convert to target format
+            const mimeType = `image/${svgConversionRule.target}`;
+            const quality = (svgConversionRule.target === 'jpeg' || svgConversionRule.target === 'webp') 
+                ? svgConversionRule.quality / 100 
+                : undefined;
+            
+            const blob = await new Promise(resolve => {
+                canvas.toBlob(resolve, mimeType, quality);
+            });
+            
+            // Copy to clipboard (clipboard only supports PNG)
+            // So convert the blob to PNG for clipboard
+            const pngBlob = await new Promise(resolve => {
+                canvas.toBlob(resolve, 'image/png');
+            });
+            
+            await navigator.clipboard.write([
+                new ClipboardItem({ 'image/png': pngBlob })
+            ]);
+            return 'png';
+        }
+    }
+    
+    // Check if imageUrl is available for regular images
+    if (!imageUrl) {
+        throw new Error('Image URL not found');
+    }
     
     // Load image
     const img = new Image();
@@ -1240,6 +1504,7 @@ async function copyImageFromElement(element) {
         new ClipboardItem({ 'image/png': blob })
     ]);
     
+    return 'png';
 }
 
 // Show notification
@@ -1497,6 +1762,15 @@ function findNearestImageElementForReplace(startElement, mouseX, mouseY) {
     // 1. Traverse up from start element (parent chain)
     let element = startElement;
     while (element && element !== document.body) {
+        // SVG element check
+        if (element.tagName === 'svg' || element.tagName === 'SVG') {
+            candidates.push({
+                element: element,
+                distance: calculateDistanceForReplace(element, mouseX, mouseY),
+                type: 'svg'
+            });
+        }
+        
         // IMG tag check
         if (element.tagName === 'IMG' && element.src) {
             candidates.push({
@@ -1519,7 +1793,30 @@ function findNearestImageElementForReplace(startElement, mouseX, mouseY) {
         element = element.parentElement;
     }
     
-    // 2. Check all IMG elements in visible area
+    // 2. Check all SVG elements in visible area
+    const allSvgs = document.querySelectorAll('svg');
+    allSvgs.forEach(svg => {
+        const rect = svg.getBoundingClientRect();
+        
+        // Check if in visible area
+        if (rect.width > 0 && rect.height > 0 && 
+            rect.top < window.innerHeight && 
+            rect.bottom > 0 &&
+            rect.left < window.innerWidth && 
+            rect.right > 0) {
+            
+            const distance = calculateDistanceForReplace(svg, mouseX, mouseY);
+            if (distance < 500) { // Within 500px
+                candidates.push({
+                    element: svg,
+                    distance: distance,
+                    type: 'svg'
+                });
+            }
+        }
+    });
+    
+    // 3. Check all IMG elements in visible area
     const allImages = document.querySelectorAll('img[src]');
     allImages.forEach(img => {
         const rect = img.getBoundingClientRect();
@@ -1542,7 +1839,7 @@ function findNearestImageElementForReplace(startElement, mouseX, mouseY) {
         }
     });
     
-    // 3. Search all elements for background-image (visible ones)
+    // 4. Search all elements for background-image (visible ones)
     const allElements = document.querySelectorAll('*');
     allElements.forEach(el => {
         const rect = el.getBoundingClientRect();

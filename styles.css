@@ -22,6 +22,9 @@ body {
     color: white;
     padding: 24px 20px;
     text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     box-shadow: 0 2px 4px rgba(33, 150, 243, 0.2);
 }
 
@@ -30,6 +33,45 @@ body {
     font-weight: 600;
     margin: 0;
     letter-spacing: 0.3px;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.header-format-badge {
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.22);
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    line-height: 1;
+}
+
+.header-download-btn {
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.header-download-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.32);
+    transform: translateY(-1px);
+}
+
+.header-download-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 .content {

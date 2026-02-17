@@ -1,6 +1,6 @@
 #  Image Copy & Converter Extension
 
-Chrome extension to paste clipboard images into file input fields, upload with format conversion, select & copy images from any webpage, and pick colors from screen.
+Chrome extension to paste clipboard images/SVG into file input fields, upload with format conversion, select & copy images from any webpage (including SVG), and pick colors from screen.
 
 ##  Features
 
@@ -19,6 +19,7 @@ Chrome extension to paste clipboard images into file input fields, upload with f
 ###  Main Feature: Clipboard to File Input Upload
 - **Automatic file input detection**: Captures file input fields you click
 - **Clipboard support**: Automatically detects images in clipboard (copied with Ctrl+C)
+- **SVG clipboard support**: Detects SVG copied as image *or* text (`<svg ...>`) and uploads as real `.svg` when no SVG conversion rule exists
 - **Format conversion**: Converts images to your desired format
 - **Quality control**: Adjustable quality settings for JPEG/WebP
 - **Convenient interface**: Easy to use modal window
@@ -26,10 +27,16 @@ Chrome extension to paste clipboard images into file input fields, upload with f
 ###  Visual Image Picker Mode
 - **Keyboard shortcut activation**: Default `Ctrl+Alt+S` (customizable)
 - **Visual highlight system**: Images are highlighted as you move your mouse
-- **Smart image detection**: Finds both `<img>` tags and images defined with CSS `background-image`
+- **Smart image detection**: Finds `<img>`, inline `<svg>`, and images defined with CSS `background-image`
 - **Click-to-copy**: Click on highlighted image to copy to clipboard
 - **Large X button**: Prominent close button in top-right corner to exit mode
 - **Independent operation**: Works independently from main feature (file input)
+
+###  Popup Quick Download (NEW)
+- **Header download icon**: A compact ⬇️ button appears on the right side of the `Image Uploader` title
+- **Format badge**: Shows detected clipboard format (`SVG`, `PNG`, `JPG`, etc.) next to the icon
+- **Smart enable/disable**: Icon is enabled only when clipboard has supported content
+- **SVG-first behavior**: If clipboard contains SVG content, download is forced as `.svg` (not PNG)
 
 ###  Image Replace Mode
 - **Replace page images with clipboard content**: Replace any image on a webpage with the image currently in your clipboard
@@ -59,9 +66,10 @@ Chrome extension to paste clipboard images into file input fields, upload with f
 
 ###  Supported Format Conversions
 
-- **Source formats**: PNG, JPEG, WebP, BMP, GIF
-- **Target formats**: PNG, JPEG, WebP, BMP
+- **Source formats**: PNG, JPEG, WebP, BMP, GIF, SVG
+- **Target formats**: PNG, JPEG, WebP, BMP, GIF, SVG
 - **Quality control**: Adjustable from 1% to 100% for JPEG and WebP
+- **Important SVG note**: Raster → SVG auto-vectorization is not supported. SVG without explicit SVG conversion rule is preserved as SVG.
 
 ###  Usage Scenarios
 
@@ -156,6 +164,20 @@ Chrome extension to paste clipboard images into file input fields, upload with f
 6. **Image uploads automatically**
    - Format conversion is applied if configured
    - File is assigned to the input field
+   - SVG is uploaded as `.svg` when there is no explicit `SVG -> ...` rule
+
+### Popup Header Download
+
+1. **Copy image or SVG**
+   - PNG/JPEG/WebP/... images or SVG content are detected automatically
+
+2. **Open popup**
+   - Top-right header icon (⬇️) becomes active if supported clipboard content exists
+   - Format badge appears (for example `SVG`, `PNG`)
+
+3. **Click the header download icon**
+   - Content is downloaded with matching extension
+   - SVG content is downloaded as `.svg`
 
 ### Visual Image Picker Mode
 
@@ -408,9 +430,14 @@ Edit the `<select>` element in popup.html
 2. Refresh the page and re-enable the extension
 3. Make sure it's a standard HTML file input element
 
+### SVG Download Looks Like PNG
+1. Make sure clipboard actually contains SVG content (`<svg ...>`) and not only a raster screenshot
+2. Open popup and check header format badge: it should show `SVG`
+3. If badge shows `PNG`, source app copied a raster preview; copy the SVG element/source again
+
 ##  Notes
 
-- Extension only works with **image** files
+- Extension works with **image files** and **SVG text/image clipboard content**
 - Maximum file size limits depend on the website
 - Format conversion is done in the browser (client-side)
 - No data is sent to any server (privacy preserved)

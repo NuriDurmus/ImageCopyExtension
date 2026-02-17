@@ -2,6 +2,7 @@
 
 let isActive = false;
 let currentImage = null;
+let currentClipboardItem = null;
 let conversionRules = []; // List of conversion rules
 let imagePickerShortcut = null; // Image picker mode shortcut
 let imageReplaceShortcut = null; // Image replace mode shortcut
@@ -28,6 +29,8 @@ const clearReplaceShortcutBtn = document.getElementById('clearReplaceShortcutBtn
 const colorPickerShortcutInput = document.getElementById('colorPickerShortcutInput');
 const clearColorPickerShortcutBtn = document.getElementById('clearColorPickerShortcutBtn');
 const editClipboardBtn = document.getElementById('editClipboardBtn');
+const headerDownloadBtn = document.getElementById('headerDownloadBtn');
+const headerFormatBadge = document.getElementById('headerFormatBadge');
 
 // Check state when page loads
 document.addEventListener('DOMContentLoaded', async () => {
@@ -45,6 +48,7 @@ function setupEventListeners() {
     clearReplaceShortcutBtn.addEventListener('click', clearReplaceShortcut);
     clearColorPickerShortcutBtn.addEventListener('click', clearColorPickerShortcut);
     editClipboardBtn.addEventListener('click', editClipboardImage);
+    headerDownloadBtn.addEventListener('click', downloadClipboardItem);
     
     // Keydown listener for shortcut input
     shortcutInput.addEventListener('keydown', captureShortcut);
@@ -179,17 +183,55 @@ async function checkClipboard() {
         const items = await navigator.clipboard.read();
         
         for (const item of items) {
+            if (item.types.includes('text/plain')) {
+                const textBlob = await item.getType('text/plain');
+                const textContent = await textBlob.text();
+                const trimmed = textContent ? textContent.trim() : '';
+
+                if (trimmed && trimmed.toLowerCase().includes('<svg')) {
+                    const svgBlob = new Blob([textContent], { type: 'image/svg+xml' });
+                    const svgUrl = URL.createObjectURL(svgBlob);
+
+                    currentImage = null;
+                    currentClipboardItem = {
+                        kind: 'svgText',
+                        mimeType: 'image/svg+xml',
+                        text: textContent,
+                        blob: svgBlob
+                    };
+
+                    previewImage.src = svgUrl;
+                    previewImage.style.display = 'block';
+                    editClipboardBtn.style.display = 'none';
+                    clipboardPreview.style.display = 'block';
+                    setHeaderDownloadState(true, 'Download SVG', 'SVG');
+
+                    const sizeKB = (svgBlob.size / 1024).toFixed(2);
+                    imageInfo.textContent = `SVG | ${sizeKB} KB`;
+                    return true;
+                }
+            }
+
             const imageTypes = item.types.filter(type => type.startsWith('image/'));
             
             if (imageTypes.length > 0) {
                 const imageType = imageTypes[0];
                 const blob = await item.getType(imageType);
                 currentImage = blob;
+                currentClipboardItem = {
+                    kind: 'image',
+                    mimeType: imageType,
+                    blob: blob
+                };
                 
                 // Show preview
                 const url = URL.createObjectURL(blob);
                 previewImage.src = url;
+                previewImage.style.display = 'block';
+                editClipboardBtn.style.display = 'flex';
                 clipboardPreview.style.display = 'block';
+                const badgeFormat = getExtensionFromMime(imageType).toUpperCase();
+                setHeaderDownloadState(true, imageType.includes('svg') ? 'Download SVG' : 'Download image', badgeFormat);
                 
                 // Image info
                 const img = new Image();
@@ -207,13 +249,77 @@ async function checkClipboard() {
         // Clipboard empty
         clipboardPreview.style.display = 'none';
         currentImage = null;
+        currentClipboardItem = null;
+        setHeaderDownloadState(false, 'Download clipboard item');
         return false;
         
     } catch (error) {
         // Silently ignore clipboard errors - they're common and harmless
         // (happens when popup doesn't have focus or clipboard is empty)
         clipboardPreview.style.display = 'none';
+        currentImage = null;
+        currentClipboardItem = null;
+        setHeaderDownloadState(false, 'Download clipboard item');
         return false;
+    }
+}
+
+function setHeaderDownloadState(enabled, title, format = '') {
+    headerDownloadBtn.disabled = !enabled;
+    headerDownloadBtn.title = title;
+
+    if (enabled && format) {
+        headerFormatBadge.textContent = format;
+        headerFormatBadge.style.display = 'inline-block';
+    } else {
+        headerFormatBadge.textContent = '';
+        headerFormatBadge.style.display = 'none';
+    }
+}
+
+function getExtensionFromMime(mimeType) {
+    if (!mimeType) return 'png';
+    if (mimeType.includes('svg')) return 'svg';
+    if (mimeType.includes('jpeg')) return 'jpg';
+    if (mimeType.includes('png')) return 'png';
+    if (mimeType.includes('webp')) return 'webp';
+    if (mimeType.includes('gif')) return 'gif';
+    if (mimeType.includes('bmp')) return 'bmp';
+    return 'png';
+}
+
+async function downloadClipboardItem() {
+    if (!currentClipboardItem) {
+        showStatus('No clipboard item to download', 'info');
+        return;
+    }
+
+    try {
+        const extension = getExtensionFromMime(currentClipboardItem.mimeType);
+        const filename = `clipboard_${Date.now()}.${extension}`;
+        let blobToDownload = currentClipboardItem.blob;
+
+        if (!blobToDownload && currentClipboardItem.kind === 'svgText') {
+            blobToDownload = new Blob([currentClipboardItem.text], { type: 'image/svg+xml' });
+        }
+
+        if (!blobToDownload) {
+            showStatus('Download failed: missing data', 'error');
+            return;
+        }
+
+        const downloadUrl = URL.createObjectURL(blobToDownload);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(downloadUrl);
+
+        showStatus(`${extension.toUpperCase()} downloaded`, 'success');
+    } catch (error) {
+        showStatus('Download failed', 'error');
     }
 }
 
