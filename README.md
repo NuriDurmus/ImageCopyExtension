@@ -1,184 +1,185 @@
 # Image Copy & Converter Extension
 
-Chrome uzantısı — clipboard'daki resim ve PDF dosyalarını file input alanlarına yükleyin, formatları dönüştürün, sayfadaki görselleri seçip kopyalayın ve ekrandan renk yakalayın.
+A Chrome extension — upload clipboard images and PDFs to file input fields, convert formats, pick and copy images from any webpage, and capture colors from your screen.
 
 ---
 
-## Özellikler
+## Features
 
-### Clipboard → File Input Yükleme (Ana Özellik)
+### Clipboard → File Input Upload (Core Feature)
 
-- **Otomatik algılama**: Tıkladığınız file input alanı otomatik yakalanır
-- **Birleşik seçim modalı**: "Dosya Seç" modalı açılır ve mevcut seçenekler sunulur:
-  - 📄 **Seçili PDF** kartı (varsa) — PDF adı gösterilir
-  - 🖼️ **Clipboard resmi** kartı (varsa) — küçük önizleme, boyut ve format bilgisi
-  - 📁 **Bilgisayardan Seç** butonu (native dialog)
-  - İptal
-- **Akıllı davranış**: Ne PDF ne resim varsa direkt native file dialog açılır
-- **Upload sonrası temizlik**: Dosya input'a enjekte edildikten sonra clipboard ve PDF seçimi otomatik sıfırlanır — aynı içerik bir daha önerilmez
+- **Auto-detection**: The file input you click is automatically captured
+- **Unified selection modal**: A "Choose File" modal appears with available options:
+  - 📄 **Selected PDF** card (if any) — shows the PDF name
+  - 🖼️ **Clipboard image** card (if any) — small preview, size and format info
+  - 📁 **Choose from computer** button (native dialog)
+  - Cancel
+- **Smart behavior**: If neither a PDF nor an image is available, the native file dialog opens directly
+- **Post-upload cleanup**: After the file is injected into the input, clipboard and PDF selection are automatically cleared — the same content won't be suggested again
 
-### PDF Seçimi ve Yükleme
+### PDF Selection & Upload
 
-- **Sayfadaki PDF bağlantılarını seç**: PDF Picker modu ile sayfadaki herhangi bir PDF bağlantısına tıklanınca seçilir
-- **Depolama ile kalıcılık**: Seçilen PDF `chrome.storage.local`'a kaydedilir, sayfa yenilense bile hatırlanır
-- **CORS bypass**: PDF'ler arka planda servis çalışanı üzerinden fetch edilir, CORS hatası alınmaz
-- **Akıllı dosya adı**: `download` attribute → URL path → bağlantı metni öncelik sırasıyla belirlenir; çift `.pdf` uzantısı ve gereksiz " PDF" eki otomatik temizlenir
-- **Popup önizleme**: Popup açıldığında seçili PDF'in adı gösterilir ve doğrudan indirilebilir
+- **Select PDF links on any page**: Click any PDF link on the page using PDF Picker mode to select it
+- **Persistent storage**: The selected PDF is saved to `chrome.storage.local` and remembered even after page refresh
+- **CORS bypass**: PDFs are fetched via the background service worker, avoiding CORS errors
+- **Smart filename**: Priority order is `download` attribute → URL path → link text; double `.pdf` extensions and unnecessary " PDF" suffixes are cleaned automatically
+- **Popup preview**: When the popup opens, the selected PDF's name is shown and can be downloaded directly
 
-### Format Dönüştürme
+### Format Conversion
 
-- **Kaynak formatlar**: PNG, JPEG, WebP, BMP, GIF, SVG
-- **Hedef formatlar**: PNG, JPEG, WebP, BMP, GIF
-- **Kalite kontrolü**: JPEG/WebP için %1–100 ayarı
-- **SVG notu**: SVG → raster dönüşümü desteklenir; raster → SVG otomatik vektörize edilmez. SVG için açık bir kural yoksa SVG dosyası olduğu gibi yüklenir
+- **Source formats**: PNG, JPEG, WebP, BMP, GIF, SVG
+- **Target formats**: PNG, JPEG, WebP, BMP, GIF
+- **Quality control**: 1–100% adjustment for JPEG/WebP
+- **SVG note**: SVG → raster conversion is supported; raster → SVG auto-vectorization is not. If no explicit rule exists for SVG, the SVG file is uploaded as-is
 
-### Resim Düzenleyici
+### Image Editor
 
-- **Modal editör**: Clipboard resmini yüklemeden önce düzenleyiciyle açın
-- **Popup'tan direkt düzenleme**: "Edit Image" butonuyla file input gerekmeden editör açılır
-- **Araçlar**: Yeniden boyutlandırma (ön ayar + özel), kırpma, yakınlaştırma, geri alma (Ctrl+Z, 20 adım)
-- **Ctrl+V ile yapıştırma**: Editör açıkken Ctrl+V ile clipboard'dan yeni resim yapıştırılabilir
-- **Çıkış seçenekleri**: Kopyala 📋 / İndir ⬇️ / Düzenlenmiş resmi kullan ✓
-- **Format + kalite**: PNG/JPEG/WebP ve kalite slider'ı her zaman aktif
+- **Modal editor**: Open the editor before uploading a clipboard image
+- **Direct editing from popup**: Launch the editor without a file input using the "Edit Image" button
+- **Tools**: Resize (presets + custom), crop with draggable handles, rotate, flip, zoom, undo (Ctrl+Z, 20 steps)
+- **Paste with Ctrl+V**: While the editor is open, paste a new image from clipboard with Ctrl+V
+- **Exit options**: Copy 📋 / Download ⬇️ / Use edited image ✓
+- **Format + quality**: PNG/JPEG/WebP and quality slider are always available
 
-### Popup Hızlı İndirme
+### Popup Quick Download
 
-- **Başlık indirme ikonu**: `⬇️` ikonu clipboard'da desteklenen içerik varsa aktif olur
-- **Format rozeti**: `SVG`, `PNG`, `JPG` gibi algılanan formatı gösterir
-- **PDF önceliği**: Seçili bir PDF varsa indirilecek içerik olarak PDF gösterilir
-- **SVG önceliği**: Clipboard'da SVG varsa `.svg` olarak kaydedilir
+- **Header download icon**: The `⬇️` icon is active when supported content exists in the clipboard
+- **Format badge**: Shows the detected format such as `SVG`, `PNG`, `JPG`, etc.
+- **PDF priority**: If a PDF is selected, it is shown as the content to download
+- **SVG priority**: If the clipboard contains SVG, it is saved as `.svg`
 
-### Görsel Resim Seçici (Image Picker)
+### Visual Image Picker
 
-- **Kısayol ile etkinleştirme**: Varsayılan `Ctrl+Alt+S` (özelleştirilebilir)
-- **Görsel vurgu**: Fare hareket ettikçe resimler mavi kenarlıkla vurgulanır
-- **Geniş algılama**: `<img>`, inline `<svg>` ve CSS `background-image` ile tanımlanan resimler algılanır
-- **Tıkla-kopyala**: Vurgulanan resme tıklamak clipboard'a kopyalar
-- **Çıkış**: Büyük X butonu veya `Escape`
+- **Shortcut activation**: Default `Ctrl+Alt+S` (customizable)
+- **Visual highlight**: Images are highlighted with a blue outline as you hover
+- **Broad detection**: Detects `<img>`, inline `<svg>`, and CSS `background-image` elements
+- **Click to copy**: Clicking a highlighted image copies it to the clipboard
+- **Exit**: Large X button or `Escape`
 
-### Resim Değiştirme Modu (Image Replace)
+### Image Replace Mode
 
-- **Kısayol ile etkinleştirme**: Özelleştirilebilir (ör. `Ctrl+Alt+R`)
-- **Clipboard'daki resimle değiştir**: Herhangi bir sayfadaki resmin üstüne tıklayarak clipboard içeriğiyle değiştir
-- **Yalnızca kaynak değişir**: `src`, `srcset` veya `background-image` dışında hiçbir HTML özelliği, class veya stil etkilenmez
-- **Çoklu değiştirme**: Tek oturumda birçok resim değiştirilebilir
-- **ESC ile çıkış**: `Escape` veya X butonu ile mod sonlandırılır
+- **Shortcut activation**: Customizable (e.g. `Ctrl+Alt+R`)
+- **Replace with clipboard image**: Click any image on the page to replace it with clipboard content
+- **Source-only change**: No HTML attributes, classes, or styles are affected other than `src`, `srcset`, or `background-image`
+- **Multiple replacements**: Replace several images in a single session
+- **Exit with ESC**: End the mode with `Escape` or the X button
 
-### Renk Seçici (Color Picker)
+### Color Picker
 
-- **Kısayol ile etkinleştirme**: Özelleştirilebilir (ör. `Ctrl+Alt+C`)
-- **EyeDropper API**: Modern tarayıcılarda sistem geneli renk seçimi (tarayıcı dışı ekran dahil)
-- **Canvas tabanlı yedek**: EyeDropper desteklenmiyorsa veya PDF'lerde otomatik canvas yöntemi kullanılır
-- **Gerçek zamanlı önizleme**: Fare hareket ettikçe HEX + RGB değerleri anlık güncellenir
-- **Otomatik kopyalama**: Seçilen renk kodu clipboard'a otomatik kopyalanır
-- **PDF uyumlu**: Tarayıcıda açık PDF belgelerinde çalışır
-- **ESC ile çıkış**: `Escape` veya X butonu
+- **Shortcut activation**: Customizable (e.g. `Ctrl+Alt+C`)
+- **EyeDropper API**: System-wide color picking on modern browsers (including outside the browser)
+- **Canvas-based fallback**: Used automatically when EyeDropper is not supported or on PDFs
+- **Real-time preview**: HEX + RGB values update live as you move the mouse
+- **Auto-copy**: The picked color code is automatically copied to the clipboard
+- **PDF compatible**: Works on PDF documents open in the browser
+- **Exit with ESC**: `Escape` or the X button
 
 ---
 
-## Kurulum
+## Installation
 
-### Manuel Kurulum (Geliştirici Modu)
+### Manual Installation (Developer Mode)
 
-1. **Depoyu indirin veya klonlayın**
+1. **Download or clone the repository**
    ```bash
    git clone https://github.com/yourusername/ImageCopyExtension.git
    ```
 
-2. **Chrome Uzantılar sayfasını açın**  
-   Adres çubuğuna `chrome://extensions/` yazın
+2. **Open Chrome Extensions page**
+   Type `chrome://extensions/` in the address bar
 
-3. **Geliştirici modunu etkinleştirin**  
-   Sağ üstteki "Developer mode" anahtarını açın
+3. **Enable Developer mode**
+   Toggle "Developer mode" in the top right
 
-4. **Uzantıyı yükleyin**  
-   "Load unpacked" butonuna tıklayın → indirilen klasörü seçin
+4. **Load the extension**
+   Click "Load unpacked" → select the downloaded folder
 
-5. **Hazır!** Araç çubuğunda uzantı ikonu görünür
-
----
-
-## Kullanım Kılavuzu
-
-### Clipboard Resmi veya PDF'i File Input'a Yüklemek
-
-1. Bir resmi kopyalayın (Ctrl+C, Win+Shift+S, sağ tık → Kopyala) **ve/veya** sayfada PDF Picker ile PDF seçin
-2. Uzantıyı etkinleştirin (popup → Enable)
-3. Herhangi bir web sitesindeki file input'a tıklayın
-4. **"Dosya Seç"** modalı açılır:
-   - **PDF kartı** → "PDF Kullan" butonu ile PDF'i yükle
-   - **Resim kartı** → "Resim Kullan" ile doğrudan yükle ya da "✏️ Düzenle" ile editörde aç
-   - **"📁 Bilgisayardan Seç"** → normal file dialog
-5. Seçim yapıldıktan sonra clipboard ve PDF seçim hafızası otomatik temizlenir
-
-### PDF Seçmek
-
-1. Uzantıyı etkinleştirin
-2. PDF bağlantısı olan bir sayfaya gidin
-3. Herhangi bir PDF bağlantısına tıklayın — PDF seçilir ve popup'ta adı gösterilir
-4. Bir file input'a tıklandığında modal'da PDF kartı otomatik görüntülenir
-
-### Görüntü Editörünü Açmak (Popup'tan)
-
-1. Bir resmi kopyalayın — popup'ta önizleme görünür
-2. "Edit Image" butonuna tıklayın
-3. Kırpın, boyutlandırın, format/kalite ayarlayın
-4. 📋 Kopyala / ⬇️ İndir / ✓ Kullan ile çıkın
-
-### Kısayolları Özelleştirmek
-
-1. Popup'u açın
-2. İlgili kısayol giriş alanına tıklayın:
-   - **Image Picker** — sayfadaki resimleri kopyalamak için
-   - **Image Replace** — sayfadaki resimleri değiştirmek için
-   - **Color Picker** — ekrandan renk yakalamak için
-3. Yeni tuş kombinasyonunu basın — otomatik kaydedilir
+5. **Done!** The extension icon will appear in the toolbar
 
 ---
 
-## Dönüştürme Kuralları
+## Usage Guide
 
-### Kural Ekleme
+### Uploading a Clipboard Image or PDF to a File Input
 
-1. Popup'u açın
-2. Kaynak format → Hedef format seçin
-3. Kalite ayarlayın (JPEG/WebP için, önerilen: %90)
-4. "Add Rule" butonuna tıklayın
+1. Copy an image (Ctrl+C, Win+Shift+S, right-click → Copy) **and/or** select a PDF on the page using PDF Picker
+2. Enable the extension (popup → Enable)
+3. Click any file input field on a website
+4. The **"Choose File"** modal appears:
+   - **PDF card** → upload the PDF using the "Use PDF" button
+   - **Image card** → upload directly with "Use Image" or open in editor with "✏️ Edit"
+   - **"📁 Choose from computer"** → standard file dialog
+5. After selection, clipboard and PDF memory are automatically cleared
 
-### Örnek Kurallar
+### Selecting a PDF
 
-| Kaynak | Hedef | Kalite | Amaç |
-|--------|-------|--------|------|
-| PNG | JPEG | %90 | Dosya boyutunu küçült |
-| JPEG | WebP | %85 | Modern web optimizasyonu |
-| PNG | WebP | %95 | Yüksek kalite + küçük boyut |
-| WebP | PNG | — | Uyumluluk için |
-| BMP | PNG | — | Standart formata geçiş |
+1. Enable the extension
+2. Navigate to a page with PDF links
+3. Click any PDF link — it is selected and its name appears in the popup
+4. When you click a file input, the PDF card is shown automatically in the modal
+
+### Opening the Image Editor (from Popup)
+
+1. Copy an image — a preview appears in the popup
+2. Click the "Edit Image" button
+3. Crop, resize, adjust format/quality
+4. Exit with 📋 Copy / ⬇️ Download / ✓ Use
+
+### Customizing Shortcuts
+
+1. Open the popup
+2. Click the relevant shortcut input field:
+   - **Image Picker** — to copy images from the page
+   - **Image Replace** — to replace images on the page
+   - **Color Picker** — to capture colors from the screen
+3. Press the new key combination — it is saved automatically
 
 ---
 
-## İzinler
+## Conversion Rules
 
-| İzin | Amaç |
-|------|------|
-| `activeTab` | Aktif sekme ile etkileşim |
-| `scripting` | Sayfalara script enjeksiyonu |
-| `clipboardRead` | Clipboard'dan resim okuma |
-| `storage` | Ayarlar ve PDF seçimini kaydetme |
-| `host_permissions (<all_urls>)` | Tüm web sitelerinde çalışma |
+### Adding a Rule
+
+1. Open the popup
+2. Select source format → target format
+3. Adjust quality (for JPEG/WebP, recommended: 90%)
+4. Click "Add Rule"
+
+### Example Rules
+
+| Source | Target | Quality | Purpose |
+|--------|--------|---------|---------|
+| PNG | JPEG | 90% | Reduce file size |
+| JPEG | WebP | 85% | Modern web optimization |
+| PNG | WebP | 95% | High quality + small size |
+| WebP | PNG | — | Compatibility |
+| BMP | PNG | — | Convert to standard format |
 
 ---
 
-## Dosya Yapısı
+## Permissions
+
+| Permission | Purpose |
+|------------|---------|
+| `activeTab` | Interact with the active tab |
+| `scripting` | Inject scripts into pages |
+| `clipboardRead` | Read images from clipboard |
+| `storage` | Save settings and PDF selection |
+| `host_permissions (<all_urls>)` | Work on all websites |
+
+---
+
+## File Structure
 
 ```
 ImageCopyExtension/
-├── manifest.json       # Uzantı yapılandırması
-├── popup.html          # Kullanıcı arayüzü
-├── popup.js            # Popup mantığı
-├── styles.css          # Popup stil dosyası
-├── content.js          # Sayfa etkileşim scripti
-├── background.js       # Arka plan servis çalışanı (CORS proxy)
+├── manifest.json       # Extension configuration
+├── popup.html          # User interface
+├── popup.js            # Popup logic
+├── styles.css          # Popup styles
+├── content.js          # Page interaction script
+├── editor.html         # Image editor interface
+├── background.js       # Background service worker (CORS proxy)
 ├── icons/
 │   ├── icon16.png
 │   ├── icon32.png
@@ -189,38 +190,37 @@ ImageCopyExtension/
 
 ---
 
-## Sorun Giderme
+## Troubleshooting
 
-### Resim Yüklenmiyor
-- Popup'ta resim önizlemesi görünüyor mu kontrol edin
-- Sayfayı yenileyip uzantıyı tekrar etkinleştirin
+### Image Not Uploading
+- Check if the image preview is visible in the popup
+- Refresh the page and re-enable the extension
 
-### PDF Yüklenmiyor
-- PDF Picker ile geçerli bir PDF bağlantısı seçilmiş olmalı
-- `file://` protokolüyle açılan PDF'ler desteklenmez
-- CORS kısıtlaması olan PDF'ler için uzantı arka planda yeniden dener
+### PDF Not Uploading
+- A valid PDF link must be selected using PDF Picker
+- PDFs opened with the `file://` protocol are not supported
+- For CORS-restricted PDFs, the extension retries in the background
 
-### Editör Açılmıyor
-- Sayfayı yenileyip tekrar deneyin; uzantı gerekirse otomatik yeni sekme açar
+### Editor Not Opening
+- Refresh the page and try again; the extension will automatically open a new tab if needed
 
-### Format Dönüşümü Çalışmıyor
-- WebP eski tarayıcılarda desteklenmeyebilir
+### Format Conversion Not Working
+- WebP may not be supported in older browsers
 
-### File Input Algılanmıyor
-- Bazı siteler standart HTML input yerine özel upload widget kullanır
-
----
-
-## Gizlilik
-
-- Tüm işlemler **yalnızca cihazınızda** gerçekleşir
-- Hiçbir veri harici sunuculara gönderilmez
-- Clipboard erişimi yalnızca resim okumak için kullanılır
-- Ayarlar ve PDF seçim bilgisi tarayıcının yerel depolama alanında tutulur
+### File Input Not Detected
+- Some sites use custom upload widgets instead of standard HTML inputs
 
 ---
 
-**Tarayıcı Uyumluluğu**: Chrome 88+ · Edge 88+ · Opera 74+ · Brave 1.20+
+## Privacy
 
-**Not**: Chrome Web Store'da yayınlanmamıştır; geliştirici modunda yüklenmelidir.
+- All processing happens **locally on your device**
+- No data is sent to external servers
+- Clipboard access is used only to read images
+- Settings and PDF selection are stored in the browser's local storage
 
+---
+
+**Browser Compatibility**: Chrome 88+ · Edge 88+ · Opera 74+ · Brave 1.20+
+
+**Note**: Not published on the Chrome Web Store; must be loaded in developer mode.
