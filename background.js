@@ -8,7 +8,8 @@ chrome.runtime.onInstalled.addListener((details) => {
             conversionRules: [],
             imagePickerShortcut: null,
             imageReplaceShortcut: null,
-            colorPickerShortcut: null
+            colorPickerShortcut: null,
+            pdfPickerShortcut: null
         });
     } else if (details.reason === 'update') {
     }
@@ -37,6 +38,9 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
         if (changes.colorPickerShortcut) {
             updateMessage.changes.colorPickerShortcut = changes.colorPickerShortcut.newValue;
         }
+        if (changes.pdfPickerShortcut) {
+            updateMessage.changes.pdfPickerShortcut = changes.pdfPickerShortcut.newValue;
+        }
         
         chrome.tabs.query({}, (tabs) => {
             tabs.forEach(tab => {
@@ -54,6 +58,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         handleClipboardRequest(sendResponse);
         return true;
     }
+
+    if (request.action === 'fetchPdfForUpload') {
+        handlePdfFetchRequest(request, sendResponse);
+        return true;
+    }
 });
 
 // Handle clipboard requests
@@ -66,17 +75,46 @@ async function handleClipboardRequest(sendResponse) {
     }
 }
 
+async function handlePdfFetchRequest(request, sendResponse) {
+    try {
+        const url = request?.url;
+        if (!url) {
+            sendResponse({ success: false, error: 'PDF URL eksik' });
+            return;
+        }
+
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) {
+            throw new Error(`Sunucu hatası: HTTP ${response.status}`);
+        }
+
+        const contentType = response.headers.get('content-type') || 'application/pdf';
+        const arrayBuffer = await response.arrayBuffer();
+
+        sendResponse({
+            success: true,
+            bytes: Array.from(new Uint8Array(arrayBuffer)),
+            contentType
+        });
+    } catch (error) {
+        console.error('[PDF Picker] background fetch error:', error);
+        sendResponse({ success: false, error: error?.message || 'PDF indirilemedi' });
+    }
+}
+
 // On tab update, send current state to newly loaded pages
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete') {
-        chrome.storage.local.get(['isActive', 'conversionRules', 'imagePickerShortcut', 'imageReplaceShortcut'], (result) => {
+        chrome.storage.local.get(['isActive', 'conversionRules', 'imagePickerShortcut', 'imageReplaceShortcut', 'colorPickerShortcut', 'pdfPickerShortcut'], (result) => {
             chrome.tabs.sendMessage(tabId, {
                 action: 'storageUpdate',
                 changes: {
                     isActive: result.isActive || false,
                     conversionRules: result.conversionRules || [],
                     imagePickerShortcut: result.imagePickerShortcut || null,
-                    imageReplaceShortcut: result.imageReplaceShortcut || null
+                    imageReplaceShortcut: result.imageReplaceShortcut || null,
+                    colorPickerShortcut: result.colorPickerShortcut || null,
+                    pdfPickerShortcut: result.pdfPickerShortcut || null
                 }
             }).catch(() => {
                 // Content script may not be loaded yet; ignore silently

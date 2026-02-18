@@ -7,6 +7,9 @@ let conversionRules = []; // List of conversion rules
 let imagePickerShortcut = null; // Image picker mode shortcut
 let imageReplaceShortcut = null; // Image replace mode shortcut
 let colorPickerShortcut = null; // Color picker mode shortcut
+let pdfPickerShortcut = null; // PDF picker mode shortcut
+let selectedPdfInfo = null; // { url, title } of the PDF selected via picker
+const PDF_SELECTION_STORAGE_KEY = 'selectedPdfForUpload';
 
 // DOM elements
 const activateBtn = document.getElementById('activateBtn');
@@ -31,12 +34,18 @@ const clearColorPickerShortcutBtn = document.getElementById('clearColorPickerSho
 const editClipboardBtn = document.getElementById('editClipboardBtn');
 const headerDownloadBtn = document.getElementById('headerDownloadBtn');
 const headerFormatBadge = document.getElementById('headerFormatBadge');
+const pdfPickerShortcutInput = document.getElementById('pdfPickerShortcutInput');
+const clearPdfPickerShortcutBtn = document.getElementById('clearPdfPickerShortcutBtn');
+const pdfPickerPreview = document.getElementById('pdfPickerPreview');
+const pdfPickerName = document.getElementById('pdfPickerName');
+const downloadPdfBtn = document.getElementById('downloadPdfBtn');
 
 // Check state when page loads
 document.addEventListener('DOMContentLoaded', async () => {
     await loadState();
     await checkClipboard();
     setupEventListeners();
+    await checkPdfPickerSelection();
 });
 
 // Set up event listeners
@@ -49,8 +58,11 @@ function setupEventListeners() {
     clearColorPickerShortcutBtn.addEventListener('click', clearColorPickerShortcut);
     editClipboardBtn.addEventListener('click', editClipboardImage);
     headerDownloadBtn.addEventListener('click', downloadClipboardItem);
+    clearPdfPickerShortcutBtn.addEventListener('click', clearPdfPickerShortcut);
+    downloadPdfBtn.addEventListener('click', downloadSelectedPdf);
     
     // Keydown listener for shortcut input
+    shortcutInput.addEventListener('keydown', captureShortcut);
     shortcutInput.addEventListener('keydown', captureShortcut);
     
     // Keydown listener for replace shortcut input
@@ -58,6 +70,9 @@ function setupEventListeners() {
     
     // Keydown listener for color picker shortcut input
     colorPickerShortcutInput.addEventListener('keydown', captureColorPickerShortcut);
+    
+    // Keydown listener for PDF picker shortcut input
+    pdfPickerShortcutInput.addEventListener('keydown', capturePdfPickerShortcut);
     
     targetFormatSelect.addEventListener('change', (e) => {
         const format = e.target.value;
@@ -81,14 +96,15 @@ async function saveState() {
         conversionRules: conversionRules,
         imagePickerShortcut: imagePickerShortcut,
         imageReplaceShortcut: imageReplaceShortcut,
-        colorPickerShortcut: colorPickerShortcut
+        colorPickerShortcut: colorPickerShortcut,
+        pdfPickerShortcut: pdfPickerShortcut
     };
     await chrome.storage.local.set(state);
 }
 
 // Load state
 async function loadState() {
-    const state = await chrome.storage.local.get(['isActive', 'conversionRules', 'imagePickerShortcut', 'imageReplaceShortcut', 'colorPickerShortcut']);
+    const state = await chrome.storage.local.get(['isActive', 'conversionRules', 'imagePickerShortcut', 'imageReplaceShortcut', 'colorPickerShortcut', 'pdfPickerShortcut']);
     
     if (state.isActive) {
         isActive = true;
@@ -115,6 +131,11 @@ async function loadState() {
     if (state.colorPickerShortcut) {
         colorPickerShortcut = state.colorPickerShortcut;
         displayColorPickerShortcut();
+    }
+
+    if (state.pdfPickerShortcut) {
+        pdfPickerShortcut = state.pdfPickerShortcut;
+        displayPdfPickerShortcut();
     }
 }
 
@@ -204,7 +225,11 @@ async function checkClipboard() {
                     previewImage.style.display = 'block';
                     editClipboardBtn.style.display = 'none';
                     clipboardPreview.style.display = 'block';
-                    setHeaderDownloadState(true, 'Download SVG', 'SVG');
+                    if (hasSelectedPdf()) {
+                        setHeaderDownloadState(true, 'Download PDF', 'PDF');
+                    } else {
+                        setHeaderDownloadState(true, 'Download SVG', 'SVG');
+                    }
 
                     const sizeKB = (svgBlob.size / 1024).toFixed(2);
                     imageInfo.textContent = `SVG | ${sizeKB} KB`;
@@ -221,7 +246,8 @@ async function checkClipboard() {
                 currentClipboardItem = {
                     kind: 'image',
                     mimeType: imageType,
-                    blob: blob
+                    blob: blob,
+                    originalName: typeof blob.name === 'string' ? blob.name : ''
                 };
                 
                 // Show preview
@@ -231,7 +257,11 @@ async function checkClipboard() {
                 editClipboardBtn.style.display = 'flex';
                 clipboardPreview.style.display = 'block';
                 const badgeFormat = getExtensionFromMime(imageType).toUpperCase();
-                setHeaderDownloadState(true, imageType.includes('svg') ? 'Download SVG' : 'Download image', badgeFormat);
+                if (hasSelectedPdf()) {
+                    setHeaderDownloadState(true, 'Download PDF', 'PDF');
+                } else {
+                    setHeaderDownloadState(true, imageType.includes('svg') ? 'Download SVG' : 'Download image', badgeFormat);
+                }
                 
                 // Image info
                 const img = new Image();
@@ -250,7 +280,11 @@ async function checkClipboard() {
         clipboardPreview.style.display = 'none';
         currentImage = null;
         currentClipboardItem = null;
-        setHeaderDownloadState(false, 'Download clipboard item');
+        if (hasSelectedPdf()) {
+            setHeaderDownloadState(true, 'Download PDF', 'PDF');
+        } else {
+            setHeaderDownloadState(false, 'Download clipboard item');
+        }
         return false;
         
     } catch (error) {
@@ -259,7 +293,11 @@ async function checkClipboard() {
         clipboardPreview.style.display = 'none';
         currentImage = null;
         currentClipboardItem = null;
-        setHeaderDownloadState(false, 'Download clipboard item');
+        if (hasSelectedPdf()) {
+            setHeaderDownloadState(true, 'Download PDF', 'PDF');
+        } else {
+            setHeaderDownloadState(false, 'Download clipboard item');
+        }
         return false;
     }
 }
@@ -288,7 +326,85 @@ function getExtensionFromMime(mimeType) {
     return 'png';
 }
 
+function sanitizeFilename(name) {
+    if (!name || typeof name !== 'string') return '';
+    return name
+        .replace(/[\\/:*?"<>|]+/g, '_')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function getFilenameFromUrl(url) {
+    try {
+        const parsed = new URL(url);
+        const rawName = decodeURIComponent(parsed.pathname.split('/').pop() || '');
+        return sanitizeFilename(rawName);
+    } catch (_) {
+        return '';
+    }
+}
+
+function getFilenameFromContentDisposition(contentDisposition) {
+    if (!contentDisposition) return '';
+
+    const starMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (starMatch && starMatch[1]) {
+        try {
+            return sanitizeFilename(decodeURIComponent(starMatch[1]));
+        } catch (_) {
+            return sanitizeFilename(starMatch[1]);
+        }
+    }
+
+    const quotedMatch = contentDisposition.match(/filename\s*=\s*"([^"]+)"/i);
+    if (quotedMatch && quotedMatch[1]) {
+        return sanitizeFilename(quotedMatch[1]);
+    }
+
+    const plainMatch = contentDisposition.match(/filename\s*=\s*([^;]+)/i);
+    if (plainMatch && plainMatch[1]) {
+        return sanitizeFilename(plainMatch[1]);
+    }
+
+    return '';
+}
+
+function ensureFilenameExtension(filename, extension) {
+    if (!filename) return '';
+    if (/\.[a-z0-9]+$/i.test(filename)) return filename;
+    return `${filename}.${extension}`;
+}
+
+function hasSelectedPdf() {
+    return !!(selectedPdfInfo && selectedPdfInfo.url);
+}
+
+async function loadSelectedPdfFromStorage() {
+    try {
+        const result = await chrome.storage.local.get([PDF_SELECTION_STORAGE_KEY]);
+        const stored = result?.[PDF_SELECTION_STORAGE_KEY];
+        if (stored && stored.url) {
+            selectedPdfInfo = {
+                url: stored.url,
+                title: stored.title || 'document.pdf'
+            };
+            showPdfPreview(selectedPdfInfo);
+            return true;
+        }
+    } catch (_) {
+    }
+    return false;
+}
+
 async function downloadClipboardItem() {
+    await checkPdfPickerSelection();
+
+    // If a PDF is selected, download it with priority
+    if (hasSelectedPdf()) {
+        await downloadSelectedPdf();
+        return;
+    }
+
     if (!currentClipboardItem) {
         showStatus('No clipboard item to download', 'info');
         return;
@@ -296,7 +412,9 @@ async function downloadClipboardItem() {
 
     try {
         const extension = getExtensionFromMime(currentClipboardItem.mimeType);
-        const filename = `clipboard_${Date.now()}.${extension}`;
+        const preferredName = sanitizeFilename(currentClipboardItem.originalName || '');
+        const fallbackName = currentClipboardItem.kind === 'svgText' ? 'clipboard.svg' : `clipboard.${extension}`;
+        const filename = ensureFilenameExtension(preferredName || fallbackName, extension);
         let blobToDownload = currentClipboardItem.blob;
 
         if (!blobToDownload && currentClipboardItem.kind === 'svgText') {
@@ -395,6 +513,8 @@ function displayShortcut() {
     } else {
         shortcutInput.value = '';
     }
+    const badge = document.getElementById('badge-picker');
+    if (badge) badge.textContent = imagePickerShortcut ? imagePickerShortcut.display : '';
 }
 
 // Clear shortcut
@@ -450,6 +570,8 @@ function displayReplaceShortcut() {
     } else {
         replaceShortcutInput.value = '';
     }
+    const badge = document.getElementById('badge-replace');
+    if (badge) badge.textContent = imageReplaceShortcut ? imageReplaceShortcut.display : '';
 }
 
 // Clear replace shortcut
@@ -623,6 +745,8 @@ function displayColorPickerShortcut() {
     } else {
         colorPickerShortcutInput.value = '';
     }
+    const badge = document.getElementById('badge-color');
+    if (badge) badge.textContent = colorPickerShortcut ? colorPickerShortcut.display : '';
 }
 
 // Clear color picker shortcut
@@ -633,4 +757,140 @@ function clearColorPickerShortcut() {
     saveState();
     
     showStatus('Color Picker shortcut cleared', 'info');
+}
+
+// ============================================
+// PDF PICKER SHORTCUT MANAGEMENT
+// ============================================
+
+function capturePdfPickerShortcut(e) {
+    e.preventDefault();
+
+    const keys = [];
+    if (e.ctrlKey) keys.push('Ctrl');
+    if (e.altKey) keys.push('Alt');
+    if (e.shiftKey) keys.push('Shift');
+    if (e.metaKey) keys.push('Meta');
+
+    if (e.key && !['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+        keys.push(e.key.toUpperCase());
+    }
+
+    if (keys.length >= 2) {
+        pdfPickerShortcut = {
+            ctrl: e.ctrlKey,
+            alt: e.altKey,
+            shift: e.shiftKey,
+            meta: e.metaKey,
+            key: e.key,
+            code: e.code,
+            display: keys.join('+')
+        };
+
+        displayPdfPickerShortcut();
+        saveState();
+        showStatus('✅ PDF Picker shortcut saved: ' + pdfPickerShortcut.display, 'success');
+    }
+}
+
+function displayPdfPickerShortcut() {
+    if (pdfPickerShortcut) {
+        pdfPickerShortcutInput.value = pdfPickerShortcut.display;
+    } else {
+        pdfPickerShortcutInput.value = '';
+    }
+    const badge = document.getElementById('badge-pdf');
+    if (badge) badge.textContent = pdfPickerShortcut ? pdfPickerShortcut.display : '';
+}
+
+function clearPdfPickerShortcut() {
+    pdfPickerShortcut = null;
+    pdfPickerShortcutInput.value = '';
+    saveState();
+    showStatus('PDF Picker shortcut cleared', 'info');
+}
+
+// ============================================
+// PDF PICKER SELECTION & DOWNLOAD
+// ============================================
+
+// Check active tab for a selected PDF (sent by content.js)
+async function checkPdfPickerSelection() {
+    try {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!activeTab || !activeTab.id) {
+            await loadSelectedPdfFromStorage();
+            return;
+        }
+
+        const response = await chrome.tabs.sendMessage(activeTab.id, { action: 'getPdfPickerSelection' })
+            .catch(() => null);
+
+        if (response && response.url) {
+            selectedPdfInfo = { url: response.url, title: response.title || 'document.pdf' };
+            showPdfPreview(selectedPdfInfo);
+            return;
+        }
+        await loadSelectedPdfFromStorage();
+    } catch (_) {}
+}
+
+// Also listen for real-time pdfSelected messages from content script
+chrome.runtime.onMessage.addListener((request) => {
+    if (request.action === 'pdfSelected') {
+        selectedPdfInfo = { url: request.url, title: request.title || 'document.pdf' };
+        showPdfPreview(selectedPdfInfo);
+    }
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local') return;
+    if (!changes[PDF_SELECTION_STORAGE_KEY]) return;
+
+    const next = changes[PDF_SELECTION_STORAGE_KEY].newValue;
+    if (next && next.url) {
+        selectedPdfInfo = { url: next.url, title: next.title || 'document.pdf' };
+        showPdfPreview(selectedPdfInfo);
+    } else {
+        selectedPdfInfo = null;
+        showPdfPreview(null);
+    }
+});
+
+function showPdfPreview(info) {
+    if (!info || !info.url) { pdfPickerPreview.style.display = 'none'; return; }
+    pdfPickerName.textContent = info.title;
+    pdfPickerPreview.style.display = 'block';
+    // Also update header badge for PDF
+    setHeaderDownloadState(true, 'Download PDF', 'PDF');
+}
+
+async function downloadSelectedPdf() {
+    if (!selectedPdfInfo || !selectedPdfInfo.url) {
+        showStatus('No PDF selected yet', 'info');
+        return;
+    }
+    try {
+        const response = await fetch(selectedPdfInfo.url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const blob = await response.blob();
+        const headerFilename = getFilenameFromContentDisposition(response.headers.get('content-disposition'));
+        const urlFilename = getFilenameFromUrl(selectedPdfInfo.url);
+        const titleFilename = sanitizeFilename(selectedPdfInfo.title || '');
+        const filename = ensureFilenameExtension(
+            headerFilename || urlFilename || titleFilename || 'document.pdf',
+            'pdf'
+        );
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        showStatus('✅ PDF downloaded: ' + filename, 'success');
+    } catch (err) {
+        showStatus('Download failed: ' + err.message, 'error');
+    }
 }

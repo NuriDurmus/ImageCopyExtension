@@ -8,135 +8,165 @@
 </head>
 <body>
     <div class="container">
+
+        <!-- ── HEADER ── -->
         <div class="header">
             <h1>📸 Image Uploader</h1>
             <div class="header-actions">
-                <span id="headerFormatBadge" class="header-format-badge" style="display: none;">SVG</span>
-                <button id="headerDownloadBtn" class="header-download-btn" title="Download clipboard item" disabled>
-                    ⬇️
-                </button>
+                <span id="headerFormatBadge" class="header-format-badge" style="display:none;">SVG</span>
+                <button id="headerDownloadBtn" class="header-download-btn" title="Download" disabled>⬇️</button>
             </div>
         </div>
-        
+
         <div class="content">
-            <div class="info-section">
+
+            <!-- ── INFO / STATUS ── -->
+            <div class="info-section" id="infoSection">
                 <p class="info-text">Copy an image and enable this feature</p>
             </div>
-
-            <div class="format-section">
-                <label for="sourceFormat">Source Format:</label>
-                <select id="sourceFormat" class="format-select">
-                    <option value="all">All Formats</option>
-                    <option value="jpeg">JPEG</option>
-                    <option value="png">PNG</option>
-                    <option value="webp">WebP</option>
-                    <option value="bmp">BMP</option>
-                    <option value="gif">GIF</option>
-                    <option value="svg">SVG</option>
-                </select>
-            </div>
-
-            <div class="format-section">
-                <label for="targetFormat">Target Format:</label>
-                <select id="targetFormat" class="format-select">
-                    <option value="original">Original (No Conversion)</option>
-                    <option value="jpeg">JPEG</option>
-                    <option value="png">PNG</option>
-                    <option value="webp">WebP</option>
-                    <option value="bmp">BMP</option>
-                    <option value="gif">GIF</option>
-                    <option value="svg">SVG</option>
-                </select>
-            </div>
-
-            <div class="quality-section" id="qualitySection" style="display: none;">
-                <label for="quality">Quality (%):</label>
-                <div class="quality-control">
-                    <input type="range" id="quality" min="1" max="100" value="100">
-                    <span id="qualityValue">100</span>
-                </div>
-            </div>
-
-            <div class="conversion-list-section">
-                <h3>Conversion Rules:</h3>
-                <button id="addRuleBtn" class="btn btn-small">+ Add Rule</button>
-                <div id="rulesList" class="rules-list"></div>
-            </div>
-
-            <div class="shortcut-section">
-                <h3>🖼️ Image Picker Mode Shortcut:</h3>
-                <div class="shortcut-info">
-                    <p>Shortcut to select and copy images from page:</p>
-                    <input type="text" id="shortcutInput" class="shortcut-input" placeholder="Press shortcut keys..." readonly>
-                    <button id="clearShortcutBtn" class="btn btn-small">Clear</button>
-                </div>
-            </div>
-
-            <div class="shortcut-section">
-                <h3>🔄 Image Replace Mode Shortcut:</h3>
-                <div class="shortcut-info">
-                    <p>Shortcut to replace page images with clipboard image:</p>
-                    <input type="text" id="replaceShortcutInput" class="shortcut-input" placeholder="Press shortcut keys..." readonly>
-                    <button id="clearReplaceShortcutBtn" class="btn btn-small">Clear</button>
-                </div>
-            </div>
-
-            <div class="shortcut-section">
-                <h3>🎨 Color Picker Mode Shortcut:</h3>
-                <div class="shortcut-info">
-                    <p>Shortcut to pick colors from screen (works with PDFs):</p>
-                    <input type="text" id="colorPickerShortcutInput" class="shortcut-input" placeholder="Press shortcut keys..." readonly>
-                    <button id="clearColorPickerShortcutBtn" class="btn btn-small">Clear</button>
-                </div>
-            </div>
-
-            <div class="button-section">
-                <button id="activateBtn" class="btn btn-primary">
-                    <span class="btn-icon">✓</span>
-                    Enable Feature
-                </button>
-                <button id="deactivateBtn" class="btn btn-secondary" style="display: none;">
-                    <span class="btn-icon">✗</span>
-                    Disable Feature
-                </button>
-            </div>
-
             <div class="status-section">
                 <div id="statusMessage" class="status-message"></div>
             </div>
 
-            <div class="clipboard-preview" id="clipboardPreview" style="display: none;">
-                <h3>Image in Clipboard:</h3>
-                <img id="previewImage" alt="Preview">
-                <div class="preview-info">
-                    <span id="imageInfo"></span>
+            <!-- ── CLIPBOARD PREVIEW ── -->
+            <div class="clipboard-preview" id="clipboardPreview" style="display:none;">
+                <div class="preview-row">
+                    <img id="previewImage" alt="Preview">
+                    <div class="preview-meta">
+                        <span id="imageInfo" class="preview-info-text"></span>
+                        <button id="editClipboardBtn" class="btn-icon-action btn-edit" title="Edit Image">✏️ Edit</button>
+                    </div>
                 </div>
-                <button id="editClipboardBtn" class="btn-edit-clipboard" title="Edit Image">
-                    <span class="edit-icon">✏️</span>
-                    Edit Image
+            </div>
+
+            <!-- ── PDF PREVIEW ── -->
+            <div id="pdfPickerPreview" class="pdf-preview-card" style="display:none;">
+                <span class="pdf-icon">📄</span>
+                <span id="pdfPickerName" class="pdf-preview-name"></span>
+                <button id="downloadPdfBtn" class="btn-icon-action btn-pdf" title="Download PDF">⬇️ PDF</button>
+            </div>
+
+            <!-- ── FORMAT ROW (From → To inline) ── -->
+            <div class="format-row">
+                <div class="format-col">
+                    <label for="sourceFormat">From</label>
+                    <select id="sourceFormat" class="format-select">
+                        <option value="all">All</option>
+                        <option value="jpeg">JPEG</option>
+                        <option value="png">PNG</option>
+                        <option value="webp">WebP</option>
+                        <option value="bmp">BMP</option>
+                        <option value="gif">GIF</option>
+                        <option value="svg">SVG</option>
+                    </select>
+                </div>
+                <span class="format-arrow">→</span>
+                <div class="format-col">
+                    <label for="targetFormat">To</label>
+                    <select id="targetFormat" class="format-select">
+                        <option value="original">Original</option>
+                        <option value="jpeg">JPEG</option>
+                        <option value="png">PNG</option>
+                        <option value="webp">WebP</option>
+                        <option value="bmp">BMP</option>
+                        <option value="gif">GIF</option>
+                        <option value="svg">SVG</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- ── QUALITY ── -->
+            <div class="quality-section" id="qualitySection" style="display:none;">
+                <label for="quality">Quality: <strong id="qualityValue">100</strong>%</label>
+                <input type="range" id="quality" min="1" max="100" value="100" class="quality-range">
+            </div>
+
+            <!-- ── CONVERSION RULES ── -->
+            <div class="rules-bar">
+                <span class="rules-label">Conversion Rules</span>
+                <button id="addRuleBtn" class="btn btn-small">+ Add</button>
+            </div>
+            <div id="rulesList" class="rules-list"></div>
+
+            <!-- ── ENABLE / DISABLE ── -->
+            <div class="button-section">
+                <button id="activateBtn" class="btn btn-primary">
+                    <span class="btn-icon">✓</span> Enable Feature
+                </button>
+                <button id="deactivateBtn" class="btn btn-secondary" style="display:none;">
+                    <span class="btn-icon">✗</span> Disable Feature
                 </button>
             </div>
-        </div>
 
-        <div class="footer">
-            <p class="instructions">
-                <strong>📋 File Input Feature:</strong><br>
-                1. Copy an image (Ctrl+C)<br>
-                2. Select target format and add rule<br>
-                3. Click "Enable Feature" button<br>
-                4. Click any file input field<br><br>
-                <strong>🖼️ Image Picker Mode:</strong><br>
-                • Set shortcut and press keys<br>
-                • Hover over images (they will be highlighted)<br>
-                • Click to copy<br><br>
-                <strong>🎨 Color Picker Mode:</strong><br>
-                • Set shortcut and press keys<br>
-                • Click "Pick Color" or click on screen<br>
-                • Works with PDFs and all content<br>
-                • <em>Note: Picker features are always active, no activation required</em>
-            </p>
-        </div>
-    </div>
+            <!-- ══════════════════════════════════════════
+                 ACCORDION — SHORTCUTS
+            ══════════════════════════════════════════ -->
+            <div class="accordion-group">
+
+                <details class="accordion">
+                    <summary class="accordion-summary">
+                        <span class="acc-title">🖼️ Image Picker</span>
+                        <span id="badge-picker" class="shortcut-badge"></span>
+                        <span class="acc-chevron">›</span>
+                    </summary>
+                    <div class="accordion-body">
+                        <p class="acc-hint">Hover over page images and click to copy</p>
+                        <div class="shortcut-row">
+                            <input type="text" id="shortcutInput" class="shortcut-input" placeholder="Click here &amp; press keys…" readonly>
+                            <button id="clearShortcutBtn" class="btn-clear" title="Clear">✕</button>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="accordion">
+                    <summary class="accordion-summary">
+                        <span class="acc-title">🔄 Image Replace</span>
+                        <span id="badge-replace" class="shortcut-badge"></span>
+                        <span class="acc-chevron">›</span>
+                    </summary>
+                    <div class="accordion-body">
+                        <p class="acc-hint">Replace page images with clipboard image</p>
+                        <div class="shortcut-row">
+                            <input type="text" id="replaceShortcutInput" class="shortcut-input" placeholder="Click here &amp; press keys…" readonly>
+                            <button id="clearReplaceShortcutBtn" class="btn-clear" title="Clear">✕</button>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="accordion">
+                    <summary class="accordion-summary">
+                        <span class="acc-title">🎨 Color Picker</span>
+                        <span id="badge-color" class="shortcut-badge"></span>
+                        <span class="acc-chevron">›</span>
+                    </summary>
+                    <div class="accordion-body">
+                        <p class="acc-hint">Pick any color from screen</p>
+                        <div class="shortcut-row">
+                            <input type="text" id="colorPickerShortcutInput" class="shortcut-input" placeholder="Click here &amp; press keys…" readonly>
+                            <button id="clearColorPickerShortcutBtn" class="btn-clear" title="Clear">✕</button>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="accordion">
+                    <summary class="accordion-summary">
+                        <span class="acc-title">📄 PDF Picker</span>
+                        <span id="badge-pdf" class="shortcut-badge"></span>
+                        <span class="acc-chevron">›</span>
+                    </summary>
+                    <div class="accordion-body">
+                        <p class="acc-hint">Select PDF links — upload without downloading</p>
+                        <div class="shortcut-row">
+                            <input type="text" id="pdfPickerShortcutInput" class="shortcut-input" placeholder="Click here &amp; press keys…" readonly>
+                            <button id="clearPdfPickerShortcutBtn" class="btn-clear" title="Clear">✕</button>
+                        </div>
+                    </div>
+                </details>
+
+            </div><!-- /accordion-group -->
+
+        </div><!-- /content -->
+    </div><!-- /container -->
     <script src="popup.js"></script>
 </body>
 </html>

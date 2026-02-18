@@ -27,8 +27,18 @@ let colorPickerUI = null;
 let colorPickerShortcut = null; // Shortcut set by user
 let eyeDropperSupported = typeof window.EyeDropper !== 'undefined';
 
+// Variables for PDF Picker Mode
+let pdfPickerMode = false;
+let pdfPickerOverlay = null;
+let pdfPickerCloseButton = null;
+let currentHighlightedPdfElement = null;
+let pdfPickerShortcut = null; // Shortcut set by user
+let selectedPdfUrl = null; // Currently selected PDF URL
+let selectedPdfTitle = null; // Currently selected PDF link text
+
 // Image Editor Settings Storage Key
 const IMAGE_EDITOR_SETTINGS_KEY = 'imageEditorLastSettings';
+const PDF_SELECTION_STORAGE_KEY = 'selectedPdfForUpload';
 
 // Check if Chrome extension context is still valid
 function isChromeContextValid() {
@@ -37,6 +47,81 @@ function isChromeContextValid() {
     } catch (e) {
         return false;
     }
+}
+
+function setStoredSelectedPdf(url, title) {
+    return new Promise((resolve) => {
+        try {
+            if (!isChromeContextValid() || !chrome.storage?.local) {
+                resolve();
+                return;
+            }
+            chrome.storage.local.set({
+                [PDF_SELECTION_STORAGE_KEY]: {
+                    url,
+                    title,
+                    ts: Date.now()
+                }
+            }, () => resolve());
+        } catch (_) {
+            resolve();
+        }
+    });
+}
+
+function getStoredSelectedPdf() {
+    return new Promise((resolve) => {
+        try {
+            if (!isChromeContextValid() || !chrome.storage?.local) {
+                resolve(null);
+                return;
+            }
+            chrome.storage.local.get([PDF_SELECTION_STORAGE_KEY], (result) => {
+                const data = result?.[PDF_SELECTION_STORAGE_KEY];
+                if (data?.url) {
+                    resolve({ url: data.url, title: data.title || 'document.pdf' });
+                    return;
+                }
+                resolve(null);
+            });
+        } catch (_) {
+            resolve(null);
+        }
+    });
+}
+
+function clearStoredSelectedPdf() {
+    return new Promise((resolve) => {
+        try {
+            if (!isChromeContextValid() || !chrome.storage?.local) {
+                resolve();
+                return;
+            }
+            chrome.storage.local.remove([PDF_SELECTION_STORAGE_KEY], () => resolve());
+        } catch (_) {
+            resolve();
+        }
+    });
+}
+
+function normalizePdfBaseName(rawName) {
+    const cleaned = String(rawName || '')
+        .trim()
+        .replace(/[\\/:*?"<>|]+/g, '_')
+        .replace(/\s+/g, ' ');
+
+    if (!cleaned) return 'document';
+
+    const withoutPdfSuffix = cleaned
+        .replace(/(\.pdf)+$/i, '')
+        .replace(/\s+pdf$/i, '')
+        .trim();
+
+    return withoutPdfSuffix || 'document';
+}
+
+function buildPdfFilename(rawName) {
+    return `${normalizePdfBaseName(rawName)}.pdf`;
 }
 
 // Initialization function
@@ -62,6 +147,18 @@ function initialize() {
             } else if (request.action === 'updateShortcut') {
                 imagePickerShortcut = request.shortcut;
                 sendResponse({ success: true });
+            } else if (request.action === 'getPdfPickerSelection') {
+                if (selectedPdfUrl) {
+                    sendResponse({ url: selectedPdfUrl, title: selectedPdfTitle });
+                } else {
+                    getStoredSelectedPdf().then((stored) => {
+                        sendResponse({
+                            url: stored?.url || null,
+                            title: stored?.title || null
+                        });
+                    });
+                    return true;
+                }
             } else if (request.action === 'openImageEditor') {
                 // Open image editor with data from popup
                 handleOpenImageEditorFromPopup(request, sendResponse);
@@ -95,13 +192,17 @@ function initialize() {
                     colorPickerShortcut = request.changes.colorPickerShortcut;
                 }
                 
+                if ('pdfPickerShortcut' in request.changes) {
+                    pdfPickerShortcut = request.changes.pdfPickerShortcut;
+                }
+                
                 sendResponse({ success: true });
             }
             return true;
         });
 
         // Check state when page loads
-        chrome.storage.local.get(['isActive', 'conversionRules', 'imagePickerShortcut', 'imageReplaceShortcut', 'colorPickerShortcut'], (result) => {
+        chrome.storage.local.get(['isActive', 'conversionRules', 'imagePickerShortcut', 'imageReplaceShortcut', 'colorPickerShortcut', 'pdfPickerShortcut', PDF_SELECTION_STORAGE_KEY], (result) => {
             if (result.isActive) {
                 isActive = true;
                 conversionRules = result.conversionRules || [];
@@ -115,6 +216,14 @@ function initialize() {
             }
             if (result.colorPickerShortcut) {
                 colorPickerShortcut = result.colorPickerShortcut;
+            }
+            if (result.pdfPickerShortcut) {
+                pdfPickerShortcut = result.pdfPickerShortcut;
+            }
+            const storedPdf = result[PDF_SELECTION_STORAGE_KEY];
+            if (!selectedPdfUrl && storedPdf?.url) {
+                selectedPdfUrl = storedPdf.url;
+                selectedPdfTitle = storedPdf.title || 'document.pdf';
             }
         });
     } else {
@@ -238,82 +347,95 @@ async function handleFileInputClick(event) {
         }, 50);
     };
     
-    // Check if document is focused - if not, open native dialog
-    if (!document.hasFocus()) {
+    // ── Collect PDF candidate ──────────────────────────────────────────────
+    let pdfCandidate = selectedPdfUrl ? { url: selectedPdfUrl, title: selectedPdfTitle } : null;
+    if (!pdfCandidate) {
+        pdfCandidate = await getStoredSelectedPdf();
+        if (pdfCandidate?.url) {
+            selectedPdfUrl = pdfCandidate.url;
+            selectedPdfTitle = pdfCandidate.title || 'document.pdf';
+        }
+    }
+
+    // ── Collect clipboard image candidate ─────────────────────────────────
+    let clipboardBlob = null;
+    let clipboardImageType = null;
+
+    if (document.hasFocus()) {
+        try {
+            const items = await navigator.clipboard.read();
+            for (const item of items) {
+                const imageTypes = item.types.filter(t => t.startsWith('image/'));
+                if (imageTypes.length > 0) {
+                    clipboardImageType = imageTypes[0];
+                    clipboardBlob = await item.getType(clipboardImageType);
+                    break;
+                }
+                if (item.types.includes('text/plain')) {
+                    try {
+                        const tb = await item.getType('text/plain');
+                        const tc = await tb.text();
+                        if (tc && tc.trim().toLowerCase().includes('<svg')) {
+                            clipboardImageType = 'image/svg+xml';
+                            clipboardBlob = new Blob([tc], { type: 'image/svg+xml' });
+                            break;
+                        }
+                    } catch (_) {}
+                }
+            }
+        } catch (_) {}
+    }
+
+    // ── Nothing to offer → native dialog ──────────────────────────────────
+    if (!pdfCandidate?.url && !clipboardBlob) {
         openNativeDialog();
         return;
     }
-    
-    // Check if there is an image in the clipboard
-    try {
-        const items = await navigator.clipboard.read();
-        let hasImage = false;
-        
-        for (const item of items) {
-            const imageTypes = item.types.filter(type => type.startsWith('image/'));
-            if (imageTypes.length > 0) {
-                hasImage = true;
-                break;
-            }
 
-            if (item.types.includes('text/plain')) {
-                try {
-                    const textBlob = await item.getType('text/plain');
-                    const textContent = await textBlob.text();
-                    if (textContent && textContent.trim().toLowerCase().includes('<svg')) {
-                        hasImage = true;
-                        break;
-                    }
-                } catch (e) {
-                }
-            }
+    // ── Show unified choice modal ──────────────────────────────────────────
+    const userChoice = await showSourceChoiceModal({
+        pdf: pdfCandidate,
+        image: clipboardBlob ? { blob: clipboardBlob, mimeType: clipboardImageType } : null
+    });
+
+    if (userChoice.action === 'pdf') {
+        const injected = await injectPdfUrlIntoInput(input, pdfCandidate.url, pdfCandidate.title || 'document.pdf');
+        input._isProcessing = false;
+        if (injected) {
+            selectedPdfUrl = null;
+            selectedPdfTitle = null;
+            await clearStoredSelectedPdf();
+            // Clipboard'ı temizle — resim hafızada kalmasın
+            try { await navigator.clipboard.writeText(''); } catch (_) {}
         }
-        
-        // If no image in clipboard, open browser dialog MANUALLY
-        if (!hasImage) {
-            openNativeDialog();
-            return;
-        }
-        
-        // Image in clipboard - continue
-        // Get the image
-        for (const item of items) {
-            const imageTypes = item.types.filter(type => type.startsWith('image/'));
-            let imageType = null;
-            let blob = null;
+        return;
+    }
 
-            if (imageTypes.length > 0) {
-                imageType = imageTypes[0];
-                blob = await item.getType(imageType);
-            } else if (item.types.includes('text/plain')) {
-                try {
-                    const textBlob = await item.getType('text/plain');
-                    const textContent = await textBlob.text();
-                    if (textContent && textContent.trim().toLowerCase().includes('<svg')) {
-                        imageType = 'image/svg+xml';
-                        blob = new Blob([textContent], { type: 'image/svg+xml' });
-                    }
-                } catch (e) {
-                }
-            }
+    if (userChoice.action === 'browse') {
+        openNativeDialog();
+        return;
+    }
 
-            if (blob && imageType) {
-                // Show modal
-                const userChoice = await showImageChoiceModal(blob, imageType);
-                
-                if (userChoice.action === 'clipboard') {
-                    // Use copied image (or edited image)
-                    const currentFormat = userChoice.format;
-                    
-                    // If edited blob exists, use it instead
-                    if (userChoice.editedBlob) {
-                        blob = userChoice.editedBlob;
-                    }
-                    
-                    // Find conversion rule
-                    const matchingRule = conversionRules.find(rule => 
-                        rule.source === 'all' || rule.source === currentFormat
-                    );
+    if (userChoice.action === 'cancel') {
+        input._isProcessing = false;
+        return;
+    }
+
+    // action === 'clipboard'
+    if (userChoice.action === 'clipboard') {
+        let blob = clipboardBlob;
+        const imageType = clipboardImageType;
+
+        // If edited blob exists, use it
+        if (userChoice.editedBlob) blob = userChoice.editedBlob;
+
+        try {
+            const currentFormat = userChoice.format;
+
+            // Find conversion rule
+            const matchingRule = conversionRules.find(rule =>
+                rule.source === 'all' || rule.source === currentFormat
+            );
                     
                     
                     if (matchingRule && !userChoice.editedBlob) {
@@ -323,48 +445,34 @@ async function handleFileInputClick(event) {
                         const fileName = generateFileName(matchingRule.target);
                         const mimeType = getMimeTypeForFormat(matchingRule.target);
                         const file = new File([blob], fileName, { type: mimeType });
-                        
                         const dataTransfer = new DataTransfer();
                         dataTransfer.items.add(file);
                         input.files = dataTransfer.files;
-                        
                         input.dispatchEvent(new Event('change', { bubbles: true }));
                         input.dispatchEvent(new Event('input', { bubbles: true }));
-                        
                         showNotification(`Image converted to ${matchingRule.target.toUpperCase()} format! ✓`, 'success');
                     } else {
-                        // If no rule or already edited, add as is
+                        // No rule or already edited — inject as-is
                         const fileName = generateFileName(currentFormat);
                         const mimeType = getMimeTypeForFormat(currentFormat);
                         const file = new File([blob], fileName, { type: mimeType });
-                        
                         const dataTransfer = new DataTransfer();
                         dataTransfer.items.add(file);
                         input.files = dataTransfer.files;
-                        
                         input.dispatchEvent(new Event('change', { bubbles: true }));
                         input.dispatchEvent(new Event('input', { bubbles: true }));
-                        
                         showNotification(userChoice.editedBlob ? 'Edited image added successfully! ✓' : 'Copied image added successfully! ✓', 'success');
                     }
-                    
-                } else if (userChoice.action === 'browse') {
-                    openNativeDialog();
-                    return;
-                }
-                
-                input._isProcessing = false;
-                return;
-            }
+                    // Clipboard'ı temizle — resim hafızada kalmasın
+                    try { await navigator.clipboard.writeText(''); } catch (_) {}
+        } catch (err) {
+            console.error('[Image inject error]', err);
         }
-        
         input._isProcessing = false;
-        
-    } catch (error) {
-        // Silently handle clipboard errors and open native dialog
-        openNativeDialog();
         return;
     }
+
+    input._isProcessing = false;
 }
 
 // Detect the real format of the blob (magic bytes check)
@@ -412,266 +520,255 @@ async function detectImageFormat(blob) {
 }
 
 // Show modal and wait for user selection
-async function showImageChoiceModal(blob, imageType) {
-    // Detect real format
-    const realFormat = await detectImageFormat(blob);
-    const actualFormat = realFormat || imageType.split('/')[1];
-    
+// ─── Unified source choice modal ────────────────────────────────────────────
+// pdf  = { url, title } | null
+// image = { blob, mimeType } | null
+// Returns: { action: 'pdf'|'clipboard'|'browse'|'cancel', format?, editedBlob? }
+async function showSourceChoiceModal({ pdf, image }) {
+    let actualFormat = null;
+    let imageObjectUrl = null;
+    let imgDimensions = null;
+
+    if (image) {
+        const realFormat = await detectImageFormat(image.blob);
+        actualFormat = realFormat || image.mimeType.split('/')[1];
+        imageObjectUrl = URL.createObjectURL(image.blob);
+        // Preload dimensions
+        await new Promise((res) => {
+            const tmp = new Image();
+            tmp.onload = () => { imgDimensions = { w: tmp.naturalWidth, h: tmp.naturalHeight }; res(); };
+            tmp.onerror = res;
+            tmp.src = imageObjectUrl;
+        });
+    }
+
+    const matchingRule = actualFormat
+        ? conversionRules.find(r => r.source === 'all' || r.source === actualFormat)
+        : null;
+
     return new Promise((resolve) => {
+        const cleanup = (action, extra = {}) => {
+            if (imageObjectUrl) URL.revokeObjectURL(imageObjectUrl);
+            modal.remove();
+            document.removeEventListener('keydown', escHandler);
+            resolve({ action, ...extra });
+        };
+
+        // ── Overlay ──────────────────────────────────────────────────────────
         const modal = document.createElement('div');
         modal.id = 'image-copy-choice-modal';
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 999999;
-            animation: fadeIn 0.2s ease;
-        `;
-        
-        const modalContent = document.createElement('div');
-        modalContent.style.cssText = `
-            background: white;
-            border-radius: 16px;
-            padding: 30px;
-            max-width: 500px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-            animation: slideUp 0.3s ease;
-        `;
-        
-        const title = document.createElement('h2');
-        title.textContent = '📸 Select Image Source';
-        title.style.cssText = `
-            margin: 0 0 20px 0;
-            color: #333;
-            font-size: 24px;
-            font-weight: 600;
-            text-align: center;
-        `;
-        
-        const previewContainer = document.createElement('div');
-        previewContainer.style.cssText = `
-            margin-bottom: 25px;
-            text-align: center;
-        `;
-        
-        const previewTitle = document.createElement('p');
-        previewTitle.textContent = 'Image in Clipboard:';
-        previewTitle.style.cssText = `
-            margin: 0 0 10px 0;
-            color: #666;
-            font-size: 14px;
-            font-weight: 500;
-        `;
-        
-        const previewImg = document.createElement('img');
-        const url = URL.createObjectURL(blob);
-        previewImg.src = url;
-        previewImg.style.cssText = `
-            max-width: 100%;
-            max-height: 300px;
-            border-radius: 8px;
-            border: 2px solid #e9ecef;
-        `;
-        
-        const imageInfo = document.createElement('div');
-        imageInfo.style.cssText = `
-            margin-top: 10px;
-            font-size: 13px;
-            color: #6c757d;
-        `;
-        
-        const img = new Image();
-        img.onload = () => {
-            const sizeKB = (blob.size / 1024).toFixed(2);
-            const format = actualFormat.toUpperCase();
-            imageInfo.textContent = `${img.width}x${img.height} | ${format} | ${sizeKB} KB`;
-        };
-        img.src = url;
-        
-        previewContainer.appendChild(previewTitle);
-        previewContainer.appendChild(previewImg);
-        previewContainer.appendChild(imageInfo);
-        
-        let formatInfo = null;
-        // Show conversion rule if exists
-        const matchingRule = conversionRules.find(rule => 
-            rule.source === 'all' || rule.source === actualFormat
-        );
-        
-        if (matchingRule) {
-            formatInfo = document.createElement('div');
-            formatInfo.style.cssText = `
-                background: #e7f3ff;
-                border: 1px solid #b3d9ff;
-                border-radius: 8px;
-                padding: 12px;
-                margin-bottom: 20px;
-                font-size: 13px;
-                color: #004085;
-                text-align: center;
-            `;
-            formatInfo.innerHTML = `
-                <strong>🔄 Format Conversion Active</strong><br>
-                ${actualFormat.toUpperCase()} → ${matchingRule.target.toUpperCase()}${(matchingRule.target === 'jpeg' || matchingRule.target === 'webp') ? ` (Quality: ${matchingRule.quality}%)` : ''}
-            `;
-        }
-        
-        const buttonContainer = document.createElement('div');
-        buttonContainer.style.cssText = `
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        `;
-        
-        const useClipboardBtn = document.createElement('button');
-        useClipboardBtn.textContent = '✓ Use Copied Image';
-        useClipboardBtn.style.cssText = `
-            padding: 14px 24px;
-            font-size: 16px;
-            font-weight: 600;
-            color: white;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: transform 0.2s ease;
-            font-family: inherit;
-        `;
-        useClipboardBtn.onmouseover = () => useClipboardBtn.style.transform = 'translateY(-2px)';
-        useClipboardBtn.onmouseout = () => useClipboardBtn.style.transform = 'translateY(0)';
-        useClipboardBtn.onclick = () => {
-            URL.revokeObjectURL(url);
-            modal.remove();
-            resolve({ action: 'clipboard', format: actualFormat });
-        };
-        
-        // Edit Image Button - Photoshop-like editor
-        const editImageBtn = document.createElement('button');
-        editImageBtn.textContent = '✏️ Edit Image';
-        editImageBtn.style.cssText = `
-            padding: 14px 24px;
-            font-size: 16px;
-            font-weight: 600;
-            color: white;
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-family: inherit;
-        `;
-        editImageBtn.onmouseover = () => {
-            editImageBtn.style.transform = 'translateY(-2px)';
-            editImageBtn.style.boxShadow = '0 4px 15px rgba(240, 147, 251, 0.4)';
-        };
-        editImageBtn.onmouseout = () => {
-            editImageBtn.style.transform = 'translateY(0)';
-            editImageBtn.style.boxShadow = 'none';
-        };
-        editImageBtn.onclick = async () => {
-            URL.revokeObjectURL(url);
-            modal.remove();
-            // Open image editor
-            const editedResult = await openImageEditor(blob, actualFormat);
-            if (editedResult) {
-                resolve({ action: 'clipboard', format: editedResult.format, editedBlob: editedResult.blob });
-            } else {
-                resolve({ action: 'cancel' });
-            }
-        };
-        
-        const browseBtn = document.createElement('button');
-        browseBtn.textContent = '📁 Select File from Computer';
-        browseBtn.style.cssText = `
-            padding: 14px 24px;
-            font-size: 16px;
-            font-weight: 600;
-            color: #667eea;
-            background: white;
-            border: 2px solid #667eea;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-family: inherit;
-        `;
-        browseBtn.onmouseover = () => {
-            browseBtn.style.background = '#f8f9fa';
-            browseBtn.style.transform = 'translateY(-2px)';
-        };
-        browseBtn.onmouseout = () => {
-            browseBtn.style.background = 'white';
-            browseBtn.style.transform = 'translateY(0)';
-        };
-        browseBtn.onclick = () => {
-            URL.revokeObjectURL(url);
-            modal.remove();
-            resolve({ action: 'browse' });
-        };
-        
-        const cancelBtn = document.createElement('button');
-        cancelBtn.textContent = '✗ Cancel';
-        cancelBtn.style.cssText = `
-            padding: 10px 24px;
-            font-size: 14px;
-            font-weight: 500;
-            color: #6c757d;
-            background: transparent;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background 0.2s ease;
-            font-family: inherit;
-        `;
-        cancelBtn.onmouseover = () => cancelBtn.style.background = '#f8f9fa';
-        cancelBtn.onmouseout = () => cancelBtn.style.background = 'transparent';
-        cancelBtn.onclick = () => {
-            URL.revokeObjectURL(url);
-            modal.remove();
-            resolve({ action: 'cancel' });
-        };
-        
-        buttonContainer.appendChild(useClipboardBtn);
-        buttonContainer.appendChild(editImageBtn);
-        buttonContainer.appendChild(browseBtn);
-        buttonContainer.appendChild(cancelBtn);
-        
-        modalContent.appendChild(title);
-        modalContent.appendChild(previewContainer);
-        if (formatInfo) {
-            modalContent.appendChild(formatInfo);
-        }
-        modalContent.appendChild(buttonContainer);
-        
-        modal.appendChild(modalContent);
-        document.body.appendChild(modal);
-        
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                URL.revokeObjectURL(url);
-                modal.remove();
-                resolve({ action: 'cancel' });
-            }
+        Object.assign(modal.style, {
+            position: 'fixed', top: '0', left: '0',
+            width: '100%', height: '100%',
+            background: 'rgba(15,23,42,0.72)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: '999999',
+            animation: 'fadeIn 0.18s ease',
         });
-        
-        const escapeHandler = (e) => {
-            if (e.key === 'Escape') {
-                URL.revokeObjectURL(url);
-                modal.remove();
-                document.removeEventListener('keydown', escapeHandler);
-                resolve({ action: 'cancel' });
+        modal.addEventListener('click', e => { if (e.target === modal) cleanup('cancel'); });
+
+        // ── Card ─────────────────────────────────────────────────────────────
+        const card = document.createElement('div');
+        Object.assign(card.style, {
+            background: '#fff',
+            borderRadius: '18px',
+            padding: '28px 28px 22px',
+            maxWidth: '420px', width: '92%',
+            maxHeight: '88vh', overflowY: 'auto',
+            boxShadow: '0 24px 64px rgba(15,23,42,0.28)',
+            fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
+            animation: 'slideUp 0.24s ease',
+        });
+
+        // Title
+        const titleEl = document.createElement('h2');
+        titleEl.textContent = '📎 Dosya Seç';
+        Object.assign(titleEl.style, {
+            margin: '0 0 20px', fontSize: '17px', fontWeight: '700',
+            color: '#0f172a', textAlign: 'center', letterSpacing: '-0.2px',
+        });
+        card.appendChild(titleEl);
+
+        // ── PDF card ──────────────────────────────────────────────────────────
+        if (pdf) {
+            const pdfCard = document.createElement('div');
+            Object.assign(pdfCard.style, {
+                display: 'flex', alignItems: 'center', gap: '14px',
+                background: '#fff8f8', border: '1.5px solid #fca5a5',
+                borderRadius: '12px', padding: '14px 16px', marginBottom: '12px',
+            });
+
+            const pdfIcon = document.createElement('div');
+            pdfIcon.textContent = '📄';
+            Object.assign(pdfIcon.style, { fontSize: '32px', lineHeight: '1', flexShrink: '0' });
+
+            const pdfMeta = document.createElement('div');
+            Object.assign(pdfMeta.style, { flex: '1', minWidth: '0' });
+
+            const pdfName = document.createElement('div');
+            pdfName.textContent = pdf.title ? `${pdf.title}.pdf` : 'Seçili PDF';
+            Object.assign(pdfName.style, {
+                fontSize: '13px', fontWeight: '600', color: '#991b1b',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            });
+
+            const pdfLabel = document.createElement('div');
+            pdfLabel.textContent = 'Seçili PDF dosyası';
+            Object.assign(pdfLabel.style, { fontSize: '11px', color: '#b91c1c', marginTop: '2px' });
+
+            pdfMeta.appendChild(pdfName);
+            pdfMeta.appendChild(pdfLabel);
+
+            const pdfBtn = document.createElement('button');
+            pdfBtn.textContent = 'PDF Kullan';
+            Object.assign(pdfBtn.style, {
+                padding: '8px 14px', fontSize: '13px', fontWeight: '600',
+                color: '#fff', background: '#dc2626', border: 'none',
+                borderRadius: '8px', cursor: 'pointer', flexShrink: '0',
+                transition: 'background 0.15s',
+            });
+            pdfBtn.onmouseover = () => { pdfBtn.style.background = '#b91c1c'; };
+            pdfBtn.onmouseout = () => { pdfBtn.style.background = '#dc2626'; };
+            pdfBtn.onclick = () => cleanup('pdf');
+
+            pdfCard.appendChild(pdfIcon);
+            pdfCard.appendChild(pdfMeta);
+            pdfCard.appendChild(pdfBtn);
+            card.appendChild(pdfCard);
+        }
+
+        // ── Image card ────────────────────────────────────────────────────────
+        if (image && imageObjectUrl) {
+            const imgCard = document.createElement('div');
+            Object.assign(imgCard.style, {
+                display: 'flex', alignItems: 'center', gap: '14px',
+                background: '#f8faff', border: '1.5px solid #bfdbfe',
+                borderRadius: '12px', padding: '14px 16px', marginBottom: '12px',
+            });
+
+            const thumb = document.createElement('img');
+            thumb.src = imageObjectUrl;
+            Object.assign(thumb.style, {
+                width: '58px', height: '58px', objectFit: 'cover',
+                borderRadius: '8px', border: '1px solid #e2e8f0', flexShrink: '0',
+            });
+
+            const imgMeta = document.createElement('div');
+            Object.assign(imgMeta.style, { flex: '1', minWidth: '0' });
+
+            const fmtLine = document.createElement('div');
+            const sizeKB = (image.blob.size / 1024).toFixed(1);
+            const dimText = imgDimensions ? `${imgDimensions.w}×${imgDimensions.h} · ` : '';
+            fmtLine.textContent = `${dimText}${actualFormat.toUpperCase()} · ${sizeKB} KB`;
+            Object.assign(fmtLine.style, { fontSize: '12px', color: '#1e40af', fontWeight: '600' });
+
+            if (matchingRule) {
+                const rulePill = document.createElement('div');
+                rulePill.textContent = `🔄 ${actualFormat.toUpperCase()} → ${matchingRule.target.toUpperCase()}${matchingRule.quality !== undefined ? ` (${matchingRule.quality}%)` : ''}`;
+                Object.assign(rulePill.style, {
+                    display: 'inline-block', marginTop: '4px',
+                    background: '#eff6ff', color: '#1d4ed8',
+                    fontSize: '11px', padding: '2px 8px', borderRadius: '20px',
+                });
+                imgMeta.appendChild(fmtLine);
+                imgMeta.appendChild(rulePill);
+            } else {
+                imgMeta.appendChild(fmtLine);
             }
-        };
-        document.addEventListener('keydown', escapeHandler);
+
+            const imgBtns = document.createElement('div');
+            Object.assign(imgBtns.style, { display: 'flex', flexDirection: 'column', gap: '6px', flexShrink: '0' });
+
+            const useBtn = document.createElement('button');
+            useBtn.textContent = 'Resim Kullan';
+            Object.assign(useBtn.style, {
+                padding: '7px 12px', fontSize: '12px', fontWeight: '600',
+                color: '#fff', background: '#2563eb', border: 'none',
+                borderRadius: '7px', cursor: 'pointer', transition: 'background 0.15s',
+            });
+            useBtn.onmouseover = () => { useBtn.style.background = '#1d4ed8'; };
+            useBtn.onmouseout = () => { useBtn.style.background = '#2563eb'; };
+            useBtn.onclick = () => cleanup('clipboard', { format: actualFormat });
+
+            const editBtn = document.createElement('button');
+            editBtn.textContent = '✏️ Düzenle';
+            Object.assign(editBtn.style, {
+                padding: '7px 12px', fontSize: '12px', fontWeight: '600',
+                color: '#fff', background: '#7c3aed', border: 'none',
+                borderRadius: '7px', cursor: 'pointer', transition: 'background 0.15s',
+            });
+            editBtn.onmouseover = () => { editBtn.style.background = '#6d28d9'; };
+            editBtn.onmouseout = () => { editBtn.style.background = '#7c3aed'; };
+            editBtn.onclick = async () => {
+                if (imageObjectUrl) URL.revokeObjectURL(imageObjectUrl);
+                imageObjectUrl = null;
+                modal.remove();
+                document.removeEventListener('keydown', escHandler);
+                const editedResult = await openImageEditor(image.blob, actualFormat);
+                if (editedResult) {
+                    resolve({ action: 'clipboard', format: editedResult.format, editedBlob: editedResult.blob });
+                } else {
+                    resolve({ action: 'cancel' });
+                }
+            };
+
+            imgBtns.appendChild(useBtn);
+            imgBtns.appendChild(editBtn);
+
+            imgCard.appendChild(thumb);
+            imgCard.appendChild(imgMeta);
+            imgCard.appendChild(imgBtns);
+            card.appendChild(imgCard);
+        }
+
+        // ── Divider ───────────────────────────────────────────────────────────
+        const divider = document.createElement('div');
+        Object.assign(divider.style, {
+            borderTop: '1px solid #e2e8f0', margin: '14px 0 14px',
+        });
+        card.appendChild(divider);
+
+        // ── Browse button ─────────────────────────────────────────────────────
+        const browseBtn = document.createElement('button');
+        browseBtn.textContent = '📁 Bilgisayardan Seç';
+        Object.assign(browseBtn.style, {
+            display: 'block', width: '100%',
+            padding: '11px 16px', fontSize: '14px', fontWeight: '600',
+            color: '#374151', background: '#fff',
+            border: '1.5px solid #d1d5db', borderRadius: '10px',
+            cursor: 'pointer', transition: 'background 0.15s, border-color 0.15s',
+        });
+        browseBtn.onmouseover = () => { browseBtn.style.background = '#f9fafb'; browseBtn.style.borderColor = '#9ca3af'; };
+        browseBtn.onmouseout = () => { browseBtn.style.background = '#fff'; browseBtn.style.borderColor = '#d1d5db'; };
+        browseBtn.onclick = () => cleanup('browse');
+        card.appendChild(browseBtn);
+
+        // ── Cancel link ───────────────────────────────────────────────────────
+        const cancelLink = document.createElement('button');
+        cancelLink.textContent = 'İptal';
+        Object.assign(cancelLink.style, {
+            display: 'block', margin: '12px auto 0',
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: '13px', color: '#9ca3af',
+            textDecoration: 'underline', padding: '4px 8px',
+        });
+        cancelLink.onmouseover = () => { cancelLink.style.color = '#6b7280'; };
+        cancelLink.onmouseout = () => { cancelLink.style.color = '#9ca3af'; };
+        cancelLink.onclick = () => cleanup('cancel');
+        card.appendChild(cancelLink);
+
+        modal.appendChild(card);
+        document.body.appendChild(modal);
+
+        const escHandler = (e) => { if (e.key === 'Escape') cleanup('cancel'); };
+        document.addEventListener('keydown', escHandler);
     });
+}
+
+// ─── (legacy stub kept for safety — not called anymore) ──────────────────────
+// Eski showImageChoiceModal → yeni showSourceChoiceModal'a yönlendir
+async function showImageChoiceModal(blob, imageType) {
+    return showSourceChoiceModal({ pdf: null, image: { blob, mimeType: imageType } });
 }
 
 // Convert image format
@@ -1016,6 +1113,22 @@ document.addEventListener('keydown', (e) => {
         if (colorMatches) {
             e.preventDefault();
             toggleColorPickerMode();
+            return;
+        }
+    }
+    
+    // Check PDF picker shortcut
+    if (pdfPickerShortcut) {
+        const pdfMatches = 
+            (pdfPickerShortcut.ctrl === e.ctrlKey) &&
+            (pdfPickerShortcut.alt === e.altKey) &&
+            (pdfPickerShortcut.shift === e.shiftKey) &&
+            (pdfPickerShortcut.meta === e.metaKey) &&
+            (pdfPickerShortcut.key === e.key || pdfPickerShortcut.code === e.code);
+        
+        if (pdfMatches) {
+            e.preventDefault();
+            togglePdfPickerMode();
             return;
         }
     }
@@ -2479,6 +2592,308 @@ function showColorPickerNotification(message, type, duration = 1000) {
             notification.remove();
         }
     }, duration);
+}
+
+// ============================================
+// PDF PICKER MODE - Select PDF links from page
+// No overlay — events bound directly on document
+// so PDF <a> links are always reachable.
+// ============================================
+
+// Returns true if a URL points to a PDF
+function isPdfUrl(href) {
+    if (!href) return false;
+    try {
+        const lower = href.toLowerCase().split('?')[0]; // ignore query params for extension check
+        return lower.endsWith('.pdf') ||
+               lower.includes('.pdf#') ||
+               lower.includes('/pdf/') ||
+               href.toLowerCase().includes('pdf=') ||
+               href.toLowerCase().includes('filetype=pdf');
+    } catch (_) { return false; }
+}
+
+// Walk up from an element and find the nearest <a> ancestor that links to a PDF
+function findPdfAnchor(el) {
+    let node = el;
+    while (node && node !== document.documentElement) {
+        if (node.tagName === 'A' && isPdfUrl(node.href)) return node;
+        node = node.parentElement;
+    }
+    return null;
+}
+
+function togglePdfPickerMode() {
+    if (pdfPickerMode) {
+        deactivatePdfPickerMode();
+    } else {
+        activatePdfPickerMode();
+    }
+}
+
+function activatePdfPickerMode() {
+    if (!pdfPickerShortcut) {
+        showPdfPickerNotification('⚠️ Lütfen önce popup\'tan kısayol belirleyin', 'error');
+        return;
+    }
+    if (pdfPickerMode) return;
+
+    pdfPickerMode = true;
+    selectedPdfUrl = null;
+    selectedPdfTitle = null;
+
+    // ── Floating info bar (pointer-events: none — never blocks clicks) ──
+    const infoBar = document.createElement('div');
+    infoBar.id = 'pdf-picker-info-bar';
+    infoBar.style.cssText = `
+        position: fixed;
+        top: 16px; left: 50%; transform: translateX(-50%);
+        background: rgba(183, 28, 28, 0.95);
+        color: white;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-size: 14px; font-weight: 500;
+        z-index: 2147483647;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        pointer-events: none;
+        white-space: nowrap;
+        transition: background 0.2s;
+    `;
+    infoBar.innerHTML = '📄 <strong>PDF Seçici aktif</strong> — Bir PDF linkine tıklayın &nbsp;|&nbsp; <kbd style="background:rgba(255,255,255,0.25);padding:1px 6px;border-radius:4px;">ESC</kbd> iptal';
+    document.documentElement.appendChild(infoBar);
+
+    // ── Close button (pointer-events: auto — only this element is clickable) ──
+    const closeBtn = document.createElement('div');
+    closeBtn.id = 'pdf-picker-close-btn';
+    closeBtn.innerHTML = '✕';
+    closeBtn.style.cssText = `
+        position: fixed;
+        top: 16px; right: 16px;
+        width: 36px; height: 36px;
+        background: #c62828;
+        color: white;
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 20px; font-weight: bold;
+        cursor: pointer;
+        z-index: 2147483647;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        user-select: none;
+    `;
+    closeBtn.addEventListener('click', () => deactivatePdfPickerMode());
+    document.documentElement.appendChild(closeBtn);
+
+    // Store refs on module-level vars for cleanup
+    pdfPickerOverlay = infoBar;       // reuse existing var for info bar
+    pdfPickerCloseButton = closeBtn;
+
+    // Change cursor to indicate picker mode via a global style tag
+    const cursorStyle = document.createElement('style');
+    cursorStyle.id = 'pdf-picker-cursor-style';
+    cursorStyle.textContent = 'a { cursor: pointer !important; }';
+    document.head.appendChild(cursorStyle);
+
+    // ── Event listeners bound directly on document ──
+    document.addEventListener('mouseover', _pdfPickerMouseOver, true);
+    document.addEventListener('mouseout',  _pdfPickerMouseOut,  true);
+    document.addEventListener('click',     _pdfPickerClick,     true);
+    document.addEventListener('keydown',   _pdfPickerKeyDown,   true);
+}
+
+function deactivatePdfPickerMode() {
+    if (!pdfPickerMode) return;
+    pdfPickerMode = false;
+
+    document.removeEventListener('mouseover', _pdfPickerMouseOver, true);
+    document.removeEventListener('mouseout',  _pdfPickerMouseOut,  true);
+    document.removeEventListener('click',     _pdfPickerClick,     true);
+    document.removeEventListener('keydown',   _pdfPickerKeyDown,   true);
+
+    if (pdfPickerOverlay)     { pdfPickerOverlay.remove();     pdfPickerOverlay = null; }
+    if (pdfPickerCloseButton) { pdfPickerCloseButton.remove(); pdfPickerCloseButton = null; }
+
+    const cs = document.getElementById('pdf-picker-cursor-style');
+    if (cs) cs.remove();
+
+    if (currentHighlightedPdfElement) {
+        removePdfHighlight(currentHighlightedPdfElement);
+        currentHighlightedPdfElement = null;
+    }
+}
+
+// ── Handlers (named so they can be removed precisely) ──
+
+function _pdfPickerMouseOver(e) {
+    const link = findPdfAnchor(e.target);
+
+    // Remove previous highlight if different element
+    if (currentHighlightedPdfElement && currentHighlightedPdfElement !== link) {
+        removePdfHighlight(currentHighlightedPdfElement);
+        currentHighlightedPdfElement = null;
+    }
+
+    if (link && link !== currentHighlightedPdfElement) {
+        highlightPdfElement(link);
+        currentHighlightedPdfElement = link;
+
+        // Update info bar
+        const bar = document.getElementById('pdf-picker-info-bar');
+        if (bar) {
+            const name = (link.textContent.trim() ||
+                          link.getAttribute('download') ||
+                          decodeURIComponent(link.pathname.split('/').pop()))
+                         .substring(0, 60);
+            bar.innerHTML = `📄 <strong>${name}</strong> &nbsp;— tıklayın`;
+        }
+    }
+}
+
+function _pdfPickerMouseOut(e) {
+    const link = findPdfAnchor(e.target);
+    // Only remove highlight if mouse truly left the link
+    // (relatedTarget will be null or outside the link)
+    if (link && !link.contains(e.relatedTarget)) {
+        removePdfHighlight(link);
+        if (currentHighlightedPdfElement === link) currentHighlightedPdfElement = null;
+
+        const bar = document.getElementById('pdf-picker-info-bar');
+        if (bar) bar.innerHTML = '📄 <strong>PDF Seçici aktif</strong> — Bir PDF linkine tıklayın &nbsp;|&nbsp; <kbd style="background:rgba(255,255,255,0.25);padding:1px 6px;border-radius:4px;">ESC</kbd> iptal';
+    }
+}
+
+async function _pdfPickerClick(e) {
+    const link = findPdfAnchor(e.target);
+    if (!link) return;   // not a PDF link — let click pass through normally
+
+    // It IS a PDF link: intercept it
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
+    const url   = link.href;
+    const title = normalizePdfBaseName(
+        link.getAttribute('download') ||
+        decodeURIComponent(new URL(url).pathname.split('/').pop() || '') ||
+        link.textContent.trim()
+    );
+
+    selectedPdfUrl   = url;
+    selectedPdfTitle = title;
+    await setStoredSelectedPdf(url, title);
+
+    showPdfPickerNotification(`✓ PDF seçildi: ${title.substring(0, 50)}`, 'success');
+
+    // Notify popup
+    try {
+        if (isChromeContextValid()) {
+            chrome.runtime.sendMessage({ action: 'pdfSelected', url, title }).catch(() => {});
+        }
+    } catch (_) {}
+
+    deactivatePdfPickerMode();
+}
+
+function _pdfPickerKeyDown(e) {
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        deactivatePdfPickerMode();
+    }
+}
+
+function highlightPdfElement(el) {
+    el.dataset.pdfPickerHighlighted = 'true';
+    el._pdfPickerOriginalOutline    = el.style.outline;
+    el._pdfPickerOriginalBoxShadow  = el.style.boxShadow;
+    el._pdfPickerOriginalBg         = el.style.backgroundColor;
+    el.style.outline         = '3px solid #e53935';
+    el.style.outlineOffset   = '2px';
+    el.style.boxShadow       = '0 0 14px rgba(229, 57, 53, 0.7)';
+    el.style.backgroundColor = 'rgba(229, 57, 53, 0.08)';
+}
+
+function removePdfHighlight(el) {
+    if (!el || !el.dataset.pdfPickerHighlighted) return;
+    delete el.dataset.pdfPickerHighlighted;
+    el.style.outline         = el._pdfPickerOriginalOutline   || '';
+    el.style.outlineOffset   = '';
+    el.style.boxShadow       = el._pdfPickerOriginalBoxShadow || '';
+    el.style.backgroundColor = el._pdfPickerOriginalBg        || '';
+    delete el._pdfPickerOriginalOutline;
+    delete el._pdfPickerOriginalBoxShadow;
+    delete el._pdfPickerOriginalBg;
+}
+
+function showPdfPickerNotification(message, type, duration = 2500) {
+    // Remove any existing PDF notifications
+    document.querySelectorAll('.pdf-picker-notification').forEach(n => n.remove());
+    const n = document.createElement('div');
+    n.className = 'pdf-picker-notification';
+    n.textContent = message;
+    n.style.cssText = `
+        position: fixed; top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        padding: 18px 36px;
+        background: ${type === 'success' ? '#388e3c' : type === 'error' ? '#c62828' : '#1565c0'};
+        color: white; font-size: 16px; font-weight: 600;
+        border-radius: 10px; z-index: 2147483647;
+        box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        pointer-events: none;
+        max-width: 80vw; text-align: center;
+    `;
+    document.documentElement.appendChild(n);
+    setTimeout(() => { if (n.parentNode) n.remove(); }, duration);
+}
+
+async function fetchPdfBlobForUpload(url) {
+    try {
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) throw new Error(`Sunucu hatası: HTTP ${response.status}`);
+        return await response.blob();
+    } catch (directError) {
+        try {
+            const bgResponse = await chrome.runtime.sendMessage({
+                action: 'fetchPdfForUpload',
+                url
+            });
+
+            if (!bgResponse || !bgResponse.success || !Array.isArray(bgResponse.bytes)) {
+                throw new Error(bgResponse?.error || 'Background fetch başarısız');
+            }
+
+            const byteArray = new Uint8Array(bgResponse.bytes);
+            return new Blob([byteArray], { type: bgResponse.contentType || 'application/pdf' });
+        } catch (backgroundError) {
+            throw new Error(backgroundError?.message || directError?.message || 'PDF alınamadı');
+        }
+    }
+}
+
+// Core: fetch PDF blob and inject it into a file input — no download needed
+async function injectPdfUrlIntoInput(input, url, title) {
+    showPdfPickerNotification('⏳ PDF yükleniyor...', 'info', 60000);
+    try {
+        const blob = await fetchPdfBlobForUpload(url);
+        const filename = buildPdfFilename(title);
+        const file = new File([blob], filename, { type: 'application/pdf' });
+
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        input.dispatchEvent(new Event('input',  { bubbles: true }));
+
+        document.querySelectorAll('.pdf-picker-notification').forEach(n => n.remove());
+        showPdfPickerNotification(`✓ PDF yüklendi: ${filename}`, 'success');
+        return true;
+    } catch (err) {
+        document.querySelectorAll('.pdf-picker-notification').forEach(n => n.remove());
+        showPdfPickerNotification(`✗ PDF yüklenemedi: ${err.message}`, 'error');
+        console.error('[PDF Picker] inject error:', err);
+        return false;
+    }
 }
 
 // ============================================
