@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Image Copy & Converter",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Upload clipboard images/SVG, convert formats, pick/copy webpage images (including SVG), edit images, and pick colors.",
   "permissions": [
     "activeTab",
