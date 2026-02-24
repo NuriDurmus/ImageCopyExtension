@@ -3,6 +3,9 @@
 let isActive = false;
 let currentImage = null;
 let currentClipboardItem = null;
+// true when the current clipboard item was loaded via Ctrl+V paste event
+// (not via navigator.clipboard.read); such items must not be auto-cleared
+let clipboardItemFromPaste = false;
 let conversionRules = []; // List of conversion rules
 let imagePickerShortcut = null; // Image picker mode shortcut
 let imageReplaceShortcut = null; // Image replace mode shortcut
@@ -46,6 +49,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     await checkClipboard();
     setupEventListeners();
     await checkPdfPickerSelection();
+
+    setTimeout(() => {
+        checkClipboard().catch(() => {});
+    }, 150);
 });
 
 // Set up event listeners
@@ -87,6 +94,99 @@ function setupEventListeners() {
     qualitySlider.addEventListener('input', (e) => {
         qualityValue.textContent = e.target.value;
     });
+
+    window.addEventListener('focus', () => {
+        checkClipboard().catch(() => {});
+    });
+
+    window.addEventListener('pointerdown', () => {
+        checkClipboard().catch(() => {});
+    });
+
+    window.addEventListener('paste', handlePopupPaste);
+}
+
+function applySvgClipboardPreview(textContent) {
+    const svgBlob = new Blob([textContent], { type: 'image/svg+xml' });
+    const svgUrl = URL.createObjectURL(svgBlob);
+
+    currentImage = null;
+    currentClipboardItem = {
+        kind: 'svgText',
+        mimeType: 'image/svg+xml',
+        text: textContent,
+        blob: svgBlob
+    };
+
+    previewImage.src = svgUrl;
+    previewImage.style.display = 'block';
+    editClipboardBtn.style.display = 'none';
+    clipboardPreview.style.display = 'block';
+
+    if (hasSelectedPdf()) {
+        setHeaderDownloadState(true, 'Download PDF', 'PDF');
+    } else {
+        setHeaderDownloadState(true, 'Download SVG', 'SVG');
+    }
+
+    const sizeKB = (svgBlob.size / 1024).toFixed(2);
+    imageInfo.textContent = `SVG | ${sizeKB} KB`;
+}
+
+function applyImageClipboardPreview(blob, imageType) {
+    currentImage = blob;
+    currentClipboardItem = {
+        kind: 'image',
+        mimeType: imageType,
+        blob: blob,
+        originalName: typeof blob.name === 'string' ? blob.name : ''
+    };
+
+    const url = URL.createObjectURL(blob);
+    previewImage.src = url;
+    previewImage.style.display = 'block';
+    editClipboardBtn.style.display = 'flex';
+    clipboardPreview.style.display = 'block';
+
+    const badgeFormat = getExtensionFromMime(imageType).toUpperCase();
+    if (hasSelectedPdf()) {
+        setHeaderDownloadState(true, 'Download PDF', 'PDF');
+    } else {
+        setHeaderDownloadState(true, imageType.includes('svg') ? 'Download SVG' : 'Download image', badgeFormat);
+    }
+
+    const img = new Image();
+    img.onload = () => {
+        const sizeKB = (blob.size / 1024).toFixed(2);
+        const format = imageType.split('/')[1].toUpperCase();
+        imageInfo.textContent = `${img.width}x${img.height} | ${format} | ${sizeKB} KB`;
+    };
+    img.src = url;
+}
+
+function handlePopupPaste(event) {
+    const data = event.clipboardData;
+    if (!data) return;
+
+    const items = Array.from(data.items || []);
+    for (const item of items) {
+        if (item.kind === 'file' && item.type && item.type.startsWith('image/')) {
+            const blob = item.getAsFile();
+            if (blob) {
+                applyImageClipboardPreview(blob, item.type);
+                clipboardItemFromPaste = true; // source: paste event — persist until explicitly used
+                showStatus('Clipboard image detected (Ctrl+V)', 'success');
+                return;
+            }
+        }
+    }
+
+    const text = data.getData('text/plain');
+    if (text && text.trim().toLowerCase().includes('<svg')) {
+        applySvgClipboardPreview(text);
+        clipboardItemFromPaste = true;
+        showStatus('Clipboard SVG detected (Ctrl+V)', 'success');
+    }
 }
 
 // Save state
@@ -201,6 +301,36 @@ function deleteRule(ruleId) {
 // Check clipboard
 async function checkClipboard() {
     try {
+        if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+            return false;
+        }
+
+        // Clipboard API requires document focus; skip silently when unfocused
+        // (interval fires might happen when popup is open but not focused)
+        if (!document.hasFocus()) {
+            return false;
+        }
+
+        // Check clipboard-read permission state before attempting read
+        try {
+            const permStatus = await navigator.permissions.query({ name: 'clipboard-read' });
+            if (permStatus.state === 'denied') {
+                console.warn('[Clipboard] clipboard-read permission denied by browser/OS settings.');
+                showStatus('Clipboard access denied. Check browser/OS clipboard settings.', 'error');
+                clipboardPreview.style.display = 'none';
+                currentImage = null;
+                currentClipboardItem = null;
+                if (hasSelectedPdf()) {
+                    setHeaderDownloadState(true, 'Download PDF', 'PDF');
+                } else {
+                    setHeaderDownloadState(false, 'Download clipboard item');
+                }
+                return false;
+            }
+        } catch (_) {
+            // permissions.query may not support 'clipboard-read' on all browsers; proceed anyway
+        }
+
         const items = await navigator.clipboard.read();
         
         for (const item of items) {
@@ -210,29 +340,8 @@ async function checkClipboard() {
                 const trimmed = textContent ? textContent.trim() : '';
 
                 if (trimmed && trimmed.toLowerCase().includes('<svg')) {
-                    const svgBlob = new Blob([textContent], { type: 'image/svg+xml' });
-                    const svgUrl = URL.createObjectURL(svgBlob);
-
-                    currentImage = null;
-                    currentClipboardItem = {
-                        kind: 'svgText',
-                        mimeType: 'image/svg+xml',
-                        text: textContent,
-                        blob: svgBlob
-                    };
-
-                    previewImage.src = svgUrl;
-                    previewImage.style.display = 'block';
-                    editClipboardBtn.style.display = 'none';
-                    clipboardPreview.style.display = 'block';
-                    if (hasSelectedPdf()) {
-                        setHeaderDownloadState(true, 'Download PDF', 'PDF');
-                    } else {
-                        setHeaderDownloadState(true, 'Download SVG', 'SVG');
-                    }
-
-                    const sizeKB = (svgBlob.size / 1024).toFixed(2);
-                    imageInfo.textContent = `SVG | ${sizeKB} KB`;
+                    clipboardItemFromPaste = false; // source: clipboard.read()
+                    applySvgClipboardPreview(textContent);
                     return true;
                 }
             }
@@ -242,61 +351,45 @@ async function checkClipboard() {
             if (imageTypes.length > 0) {
                 const imageType = imageTypes[0];
                 const blob = await item.getType(imageType);
-                currentImage = blob;
-                currentClipboardItem = {
-                    kind: 'image',
-                    mimeType: imageType,
-                    blob: blob,
-                    originalName: typeof blob.name === 'string' ? blob.name : ''
-                };
-                
-                // Show preview
-                const url = URL.createObjectURL(blob);
-                previewImage.src = url;
-                previewImage.style.display = 'block';
-                editClipboardBtn.style.display = 'flex';
-                clipboardPreview.style.display = 'block';
-                const badgeFormat = getExtensionFromMime(imageType).toUpperCase();
-                if (hasSelectedPdf()) {
-                    setHeaderDownloadState(true, 'Download PDF', 'PDF');
-                } else {
-                    setHeaderDownloadState(true, imageType.includes('svg') ? 'Download SVG' : 'Download image', badgeFormat);
-                }
-                
-                // Image info
-                const img = new Image();
-                img.onload = () => {
-                    const sizeKB = (blob.size / 1024).toFixed(2);
-                    const format = imageType.split('/')[1].toUpperCase();
-                    imageInfo.textContent = `${img.width}x${img.height} | ${format} | ${sizeKB} KB`;
-                };
-                img.src = url;
+                clipboardItemFromPaste = false; // source: clipboard.read()
+                applyImageClipboardPreview(blob, imageType);
                 
                 return true;
             }
         }
         
-        // Clipboard empty
-        clipboardPreview.style.display = 'none';
-        currentImage = null;
-        currentClipboardItem = null;
-        if (hasSelectedPdf()) {
-            setHeaderDownloadState(true, 'Download PDF', 'PDF');
-        } else {
-            setHeaderDownloadState(false, 'Download clipboard item');
+        // Clipboard is empty (no image found) — only clear if the item was
+        // loaded via clipboard.read(), not via Ctrl+V paste. Paste-sourced
+        // items persist until the user explicitly acts on them.
+        if (!clipboardItemFromPaste) {
+            clipboardPreview.style.display = 'none';
+            currentImage = null;
+            currentClipboardItem = null;
+            if (hasSelectedPdf()) {
+                setHeaderDownloadState(true, 'Download PDF', 'PDF');
+            } else {
+                setHeaderDownloadState(false, 'Download clipboard item');
+            }
         }
         return false;
         
     } catch (error) {
-        // Silently ignore clipboard errors - they're common and harmless
-        // (happens when popup doesn't have focus or clipboard is empty)
-        clipboardPreview.style.display = 'none';
-        currentImage = null;
-        currentClipboardItem = null;
-        if (hasSelectedPdf()) {
-            setHeaderDownloadState(true, 'Download PDF', 'PDF');
-        } else {
-            setHeaderDownloadState(false, 'Download clipboard item');
+        console.error('[Clipboard] checkClipboard error:', error.name, error.message);
+
+        // Never clear a paste-sourced clipboard item on read failure.
+        if (!clipboardItemFromPaste) {
+            clipboardPreview.style.display = 'none';
+            currentImage = null;
+            currentClipboardItem = null;
+            if (hasSelectedPdf()) {
+                setHeaderDownloadState(true, 'Download PDF', 'PDF');
+            } else {
+                setHeaderDownloadState(false, 'Download clipboard item');
+            }
+        }
+
+        if (error.name === 'NotAllowedError' && document.hasFocus() && !clipboardItemFromPaste) {
+            showStatus('Clipboard access blocked. Paste with Ctrl+V or check browser/OS settings.', 'error');
         }
         return false;
     }
@@ -435,6 +528,8 @@ async function downloadClipboardItem() {
         a.remove();
         URL.revokeObjectURL(downloadUrl);
 
+        // Item has been consumed; allow checkClipboard to clear preview next cycle
+        clipboardItemFromPaste = false;
         showStatus(`${extension.toUpperCase()} downloaded`, 'success');
     } catch (error) {
         showStatus('Download failed', 'error');

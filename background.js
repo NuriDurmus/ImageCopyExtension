@@ -54,26 +54,11 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 
 // Listen for messages
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'getClipboard') {
-        handleClipboardRequest(sendResponse);
-        return true;
-    }
-
     if (request.action === 'fetchPdfForUpload') {
         handlePdfFetchRequest(request, sendResponse);
         return true;
     }
 });
-
-// Handle clipboard requests
-async function handleClipboardRequest(sendResponse) {
-    try {
-        sendResponse({ success: true });
-    } catch (error) {
-        console.error('Clipboard processing error:', error);
-        sendResponse({ success: false, error: error.message });
-    }
-}
 
 async function handlePdfFetchRequest(request, sendResponse) {
     try {

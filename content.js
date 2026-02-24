@@ -36,6 +36,14 @@ let pdfPickerShortcut = null; // Shortcut set by user
 let selectedPdfUrl = null; // Currently selected PDF URL
 let selectedPdfTitle = null; // Currently selected PDF link text
 
+// Paste-cached clipboard image (set by handlePagePaste on Ctrl+V).
+// navigator.clipboard.read() is unreliable in content scripts (requires page
+// clipboard-read permission; also fails when focus leaves the page on file
+// input click). Listening for paste events is the only reliable approach.
+let cachedClipboardBlob = null;
+let cachedClipboardType = null;
+let cachedClipboardTs = 0; // timestamp of last paste, for staleness check
+
 // Image Editor Settings Storage Key
 const IMAGE_EDITOR_SETTINGS_KEY = 'imageEditorLastSettings';
 const PDF_SELECTION_STORAGE_KEY = 'selectedPdfForUpload';
@@ -124,12 +132,54 @@ function buildPdfFilename(rawName) {
     return `${normalizePdfBaseName(rawName)}.pdf`;
 }
 
+// Cache clipboard image blob from paste events (Ctrl+V on the page).
+// This is the only reliable way to get clipboard images in content scripts.
+function handlePagePaste(event) {
+    if (!isActive) return;
+    const data = event.clipboardData;
+    if (!data) return;
+
+    // Image file item
+    const items = Array.from(data.items || []);
+    for (const item of items) {
+        if (item.kind === 'file' && item.type && item.type.startsWith('image/')) {
+            const blob = item.getAsFile();
+            if (blob) {
+                cachedClipboardBlob = blob;
+                cachedClipboardType = item.type;
+                cachedClipboardTs = Date.now();
+                return;
+            }
+        }
+    }
+
+    // SVG text item
+    const text = data.getData('text/plain');
+    if (text && text.trim().toLowerCase().includes('<svg')) {
+        cachedClipboardBlob = new Blob([text], { type: 'image/svg+xml' });
+        cachedClipboardType = 'image/svg+xml';
+        cachedClipboardTs = Date.now();
+    }
+}
+
+// Clear the paste-cache (called after the blob has been used)
+function clearCachedClipboard() {
+    cachedClipboardBlob = null;
+    cachedClipboardType = null;
+    cachedClipboardTs = 0;
+}
+
 // Initialization function
 function initialize() {
     if (isInitialized) {
         return;
     }
     isInitialized = true;
+
+    // Always listen for paste events to pre-cache clipboard images.
+    // Must be registered even before isActive check so the user can paste
+    // at any time and have the blob ready when they click a file input.
+    document.addEventListener('paste', handlePagePaste, true);
     
     // Check if Chrome Extension APIs are available
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
@@ -358,32 +408,23 @@ async function handleFileInputClick(event) {
     }
 
     // ── Collect clipboard image candidate ─────────────────────────────────
+    // We use the paste-event cache (set by handlePagePaste) instead of
+    // navigator.clipboard.read(). Reasons:
+    //   1. clipboard.read() requires the *page* to have clipboard-read
+    //      permission; the extension manifest permission alone is insufficient.
+    //   2. When a file input is clicked the page loses focus, so clipboard.read()
+    //      always throws NotAllowedError at exactly the moment we need it.
+    //   3. paste events + clipboardData work without any browser permission.
+    //
+    // Workflow: user copies image → presses Ctrl+V on the page (paste event
+    // caches the blob) → clicks file input → modal shows with the cached image.
+    const CACHE_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
     let clipboardBlob = null;
     let clipboardImageType = null;
 
-    if (document.hasFocus()) {
-        try {
-            const items = await navigator.clipboard.read();
-            for (const item of items) {
-                const imageTypes = item.types.filter(t => t.startsWith('image/'));
-                if (imageTypes.length > 0) {
-                    clipboardImageType = imageTypes[0];
-                    clipboardBlob = await item.getType(clipboardImageType);
-                    break;
-                }
-                if (item.types.includes('text/plain')) {
-                    try {
-                        const tb = await item.getType('text/plain');
-                        const tc = await tb.text();
-                        if (tc && tc.trim().toLowerCase().includes('<svg')) {
-                            clipboardImageType = 'image/svg+xml';
-                            clipboardBlob = new Blob([tc], { type: 'image/svg+xml' });
-                            break;
-                        }
-                    } catch (_) {}
-                }
-            }
-        } catch (_) {}
+    if (cachedClipboardBlob && (Date.now() - cachedClipboardTs) < CACHE_MAX_AGE_MS) {
+        clipboardBlob = cachedClipboardBlob;
+        clipboardImageType = cachedClipboardType;
     }
 
     // ── Nothing to offer → native dialog ──────────────────────────────────
@@ -463,8 +504,7 @@ async function handleFileInputClick(event) {
                         input.dispatchEvent(new Event('input', { bubbles: true }));
                         showNotification(userChoice.editedBlob ? 'Edited image added successfully! ✓' : 'Copied image added successfully! ✓', 'success');
                     }
-                    // Clipboard'ı temizle — resim hafızada kalmasın
-                    try { await navigator.clipboard.writeText(''); } catch (_) {}
+                    clearCachedClipboard();
         } catch (err) {
             console.error('[Image inject error]', err);
         }
@@ -3374,6 +3414,7 @@ async function openImageEditor(blob, format) {
                             <label class="editor-label">Format</label>
                             <select id="output-format" class="editor-input" style="width: 100%;">
                                 <option value="png" ${format === 'png' ? 'selected' : ''}>PNG (Lossless)</option>
+                                <option value="jpg" ${format === 'jpg' ? 'selected' : ''}>JPG (Compressed)</option>
                                 <option value="jpeg" ${format === 'jpeg' ? 'selected' : ''}>JPEG (Compressed)</option>
                                 <option value="webp" ${format === 'webp' ? 'selected' : ''}>WebP (Modern)</option>
                             </select>
@@ -3451,7 +3492,7 @@ async function openImageEditor(blob, format) {
                 <div id="canvas-container" style="flex: 1; overflow: auto; padding: 20px; position: relative;">
                     <div style="min-height: 100%; display: flex; align-items: center; justify-content: center;">
                         <div id="canvas-wrapper" style="position: relative; line-height: 0;">
-                            <canvas id="editor-canvas" style="display: block; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: none;"></canvas>
+                            <canvas id="editor-canvas" style="display: block; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: none; image-rendering: pixelated; image-rendering: crisp-edges;"></canvas>
                             <div id="crop-overlay-container" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; pointer-events: none;">
                                 <div id="crop-selection" style="position: absolute; border: 2px dashed #667eea; background: rgba(102, 126, 234, 0.1); pointer-events: auto; cursor: move;"></div>
                                 <div class="crop-handle" id="handle-nw" style="top: -6px; left: -6px; cursor: nw-resize;"></div>
@@ -3505,23 +3546,11 @@ async function openImageEditor(blob, format) {
             // Initialize undo buttons state
             updateUndoButtons();
             
-            // Auto-fit large images to viewport
-            setTimeout(() => {
-                const container = editor.querySelector('#canvas-container');
-                const containerWidth = container.clientWidth - 40;
-                const containerHeight = container.clientHeight - 40;
-                
-                const scaleX = containerWidth / currentImage.width;
-                const scaleY = containerHeight / currentImage.height;
-                const fitZoom = Math.min(scaleX, scaleY, 1);
-                
-                // Only apply zoom if image is larger than viewport
-                if (fitZoom < 1) {
-                    zoom = fitZoom;
-                    canvas.style.transform = `scale(${zoom})`;
-                    editor.querySelector('#zoom-level').textContent = `${Math.round(zoom * 100)}%`;
-                }
-            }, 50);
+            // Always start at 100% zoom so the original image is shown pixel-perfect
+            // The container has overflow:auto — the user can scroll to see large images
+            zoom = 1;
+            canvas.style.transform = 'scale(1)';
+            editor.querySelector('#zoom-level').textContent = '100%';
         };
         img.src = imageUrl;
         
@@ -3543,7 +3572,7 @@ async function openImageEditor(blob, format) {
                     const sizeKB = (b.size / 1024).toFixed(1);
                     editor.querySelector('#editor-filesize').textContent = `💾 ${sizeKB} KB`;
                 }
-            }, `image/${settings.outputFormat}`, settings.quality / 100);
+            }, `image/${settings.outputFormat === 'jpg' ? 'jpeg' : settings.outputFormat}`, settings.quality / 100);
         }
         
         // Save state to history
@@ -3669,11 +3698,15 @@ async function openImageEditor(blob, format) {
             const h = getImageHeight();
             canvas.width = w;
             canvas.height = h;
+            // Disable smoothing so every pixel is rendered exactly as-is
+            ctx.imageSmoothingEnabled = false;
             ctx.drawImage(currentImage, 0, 0);
             
             // Apply zoom
             canvas.style.transform = `scale(${zoom})`;
             canvas.style.transformOrigin = 'top left';
+            // Prevent CSS scale from blurring the canvas — always show true pixels
+            canvas.style.imageRendering = 'pixelated';
             
             // Update wrapper size to match scaled canvas
             canvasWrapper.style.width = `${w * zoom}px`;
@@ -3821,8 +3854,8 @@ async function openImageEditor(blob, format) {
                 exportCtx.drawImage(originalImage, 0, 0);
             }
             
-            const mimeType = `image/${settings.outputFormat}`;
-            const quality = (settings.outputFormat === 'jpeg' || settings.outputFormat === 'webp') 
+            const mimeType = `image/${settings.outputFormat === 'jpg' ? 'jpeg' : settings.outputFormat}`;
+            const quality = (settings.outputFormat === 'jpeg' || settings.outputFormat === 'jpg' || settings.outputFormat === 'webp') 
                 ? settings.quality / 100 
                 : undefined;
             
@@ -4318,8 +4351,8 @@ async function openImageEditor(blob, format) {
                     font-size: 14px; font-weight: 500;
                     animation: slideIn 0.3s ease-out;
                 `;
-                const extension = settings.outputFormat === 'jpeg' ? 'jpg' : settings.outputFormat;
-                const qualityInfo = (settings.outputFormat === 'jpeg' || settings.outputFormat === 'webp') 
+                const extension = (settings.outputFormat === 'jpeg' || settings.outputFormat === 'jpg') ? 'jpg' : settings.outputFormat;
+                const qualityInfo = (settings.outputFormat === 'jpeg' || settings.outputFormat === 'jpg' || settings.outputFormat === 'webp') 
                     ? `-q${settings.quality}` 
                     : '';
                 notification.innerHTML = `
@@ -4391,8 +4424,8 @@ async function openImageEditor(blob, format) {
             
             // Generate filename with timestamp, format and quality
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-            const extension = settings.outputFormat === 'jpeg' ? 'jpg' : settings.outputFormat;
-            const qualityInfo = (settings.outputFormat === 'jpeg' || settings.outputFormat === 'webp') 
+            const extension = (settings.outputFormat === 'jpeg' || settings.outputFormat === 'jpg') ? 'jpg' : settings.outputFormat;
+            const qualityInfo = (settings.outputFormat === 'jpeg' || settings.outputFormat === 'jpg' || settings.outputFormat === 'webp') 
                 ? `-q${settings.quality}` 
                 : '';
             a.download = `edited-${currentImage.width}x${currentImage.height}-${timestamp}${qualityInfo}.${extension}`;

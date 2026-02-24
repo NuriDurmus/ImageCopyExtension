@@ -201,6 +201,75 @@
             font-size: 48px;
             margin-bottom: 10px;
         }
+
+        .drop-zone {
+            border: 3px dashed #667eea;
+            border-radius: 12px;
+            padding: 40px 20px;
+            text-align: center;
+            background: #f8f9fa;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+
+        .drop-zone.drag-over {
+            background: #e8ecff;
+            border-color: #764ba2;
+            transform: scale(1.01);
+        }
+
+        .drop-zone p {
+            color: #6c757d;
+            font-size: 15px;
+            margin-top: 8px;
+        }
+
+        .drop-zone .drop-icon {
+            font-size: 52px;
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        .image-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-top: 10px;
+        }
+
+        .image-list-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .image-list-item img {
+            width: 120px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+            flex-shrink: 0;
+        }
+
+        .image-list-item .img-info {
+            font-size: 13px;
+            color: #495057;
+            line-height: 1.6;
+        }
+
+        .image-list-item .img-info strong {
+            display: block;
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 4px;
+            word-break: break-all;
+        }
     </style>
 </head>
 <body>
@@ -282,19 +351,21 @@
 
         <div class="test-section">
             <h2>Test 4: Drag & Drop Area</h2>
-            <div class="form-group">
-                <label for="file6">🎯 Drag or Select File:</label>
-                <input type="file" id="file6" accept="image/*" multiple>
+            <div id="dropZone" class="drop-zone">
+                <span class="drop-icon">📂</span>
+                <strong>Drag &amp; drop images here</strong>
+                <p>Or click to select files &mdash; multiple selection supported</p>
+                <input type="file" id="file6" accept="image/*" multiple style="display:none">
             </div>
-            <div class="preview-area" id="preview4">
+            <div class="preview-area" id="preview4" style="margin-top:16px">
                 <strong>Uploaded Files:</strong>
-                <div id="preview4-content"></div>
+                <div id="preview4-content" class="image-list"></div>
             </div>
         </div>
     </div>
 
     <script>
-        // Listen for file input changes and show preview
+        // Show a single image in a preview container (replaces content)
         function setupFileInput(inputId, previewId) {
             const input = document.getElementById(inputId);
             const preview = document.getElementById(previewId);
@@ -303,19 +374,18 @@
                 const file = e.target.files[0];
                 if (file && file.type.startsWith('image/')) {
                     const reader = new FileReader();
-                    reader.onload = function(e) {
+                    reader.onload = function(evt) {
                         const img = document.createElement('img');
-                        img.src = e.target.result;
-                        
+                        img.src = evt.target.result;
+
                         const info = document.createElement('div');
                         info.className = 'preview-info';
                         info.textContent = `File: ${file.name} | Size: ${(file.size / 1024).toFixed(2)} KB | Type: ${file.type}`;
-                        
-                        preview.innerHTML = '<strong>Uploaded Image:</strong>';
+
+                        preview.innerHTML = '';
                         preview.appendChild(img);
                         preview.appendChild(info);
-                        
-                        // Success message
+
                         console.log('✅ File uploaded successfully:', file.name);
                     };
                     reader.readAsDataURL(file);
@@ -323,13 +393,80 @@
             });
         }
 
-        // Setup all file inputs
+        // Append multiple image files to a list container (stacked)
+        function appendImagesToList(files, listContainer) {
+            Array.from(files).forEach(function(file) {
+                if (!file.type.startsWith('image/')) return;
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    const item = document.createElement('div');
+                    item.className = 'image-list-item';
+
+                    const img = document.createElement('img');
+                    img.src = evt.target.result;
+
+                    const info = document.createElement('div');
+                    info.className = 'img-info';
+                    info.innerHTML = `<strong>${file.name}</strong>
+                        Size: ${(file.size / 1024).toFixed(2)} KB<br>
+                        Type: ${file.type}`;
+
+                    item.appendChild(img);
+                    item.appendChild(info);
+                    listContainer.appendChild(item);
+
+                    console.log('✅ File added:', file.name);
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // Setup single-file inputs
         setupFileInput('file1', 'preview1-content');
         setupFileInput('file2', 'preview2-content');
         setupFileInput('file3', 'preview3-content');
         setupFileInput('file4', 'preview3-content');
         setupFileInput('file5', 'preview3-content');
-        setupFileInput('file6', 'preview4-content');
+
+        // --- Drag & Drop + multi-file for Test 4 ---
+        const dropZone = document.getElementById('dropZone');
+        const file6Input = document.getElementById('file6');
+        const preview4List = document.getElementById('preview4-content');
+
+        // Click on drop zone opens file picker
+        dropZone.addEventListener('click', function() {
+            file6Input.click();
+        });
+
+        // File picker change
+        file6Input.addEventListener('change', function(e) {
+            appendImagesToList(e.target.files, preview4List);
+            // Reset so same files can be re-selected if needed
+            file6Input.value = '';
+        });
+
+        // Drag events
+        dropZone.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                appendImagesToList(files, preview4List);
+            }
+        });
 
         // Prevent form submission
         document.getElementById('testForm')?.addEventListener('submit', function(e) {
