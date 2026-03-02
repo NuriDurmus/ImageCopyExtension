@@ -169,6 +169,52 @@ function clearCachedClipboard() {
     cachedClipboardTs = 0;
 }
 
+// Read clipboard image directly via Clipboard API (fallback when page paste
+// cache is empty). This may fail on some sites/browsers, so callers should
+// handle null gracefully.
+async function readClipboardImageCandidate() {
+    try {
+        if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+            return null;
+        }
+
+        try {
+            if (navigator.permissions && typeof navigator.permissions.query === 'function') {
+                const permStatus = await navigator.permissions.query({ name: 'clipboard-read' });
+                if (permStatus && permStatus.state === 'denied') {
+                    return null;
+                }
+            }
+        } catch (_) {
+            // Some browsers/pages may not support clipboard-read permission query.
+        }
+
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+            const imageTypes = item.types.filter(type => type.startsWith('image/'));
+            if (imageTypes.length > 0) {
+                const mimeType = imageTypes[0];
+                const blob = await item.getType(mimeType);
+                return { blob, mimeType };
+            }
+
+            if (item.types.includes('text/plain')) {
+                const textBlob = await item.getType('text/plain');
+                const text = (await textBlob.text()) || '';
+                if (text.trim().toLowerCase().includes('<svg')) {
+                    return {
+                        blob: new Blob([text], { type: 'image/svg+xml' }),
+                        mimeType: 'image/svg+xml'
+                    };
+                }
+            }
+        }
+    } catch (_) {
+        // Clipboard API is best-effort in content scripts; ignore and fallback.
+    }
+    return null;
+}
+
 // Initialization function
 function initialize() {
     if (isInitialized) {
@@ -425,6 +471,16 @@ async function handleFileInputClick(event) {
     if (cachedClipboardBlob && (Date.now() - cachedClipboardTs) < CACHE_MAX_AGE_MS) {
         clipboardBlob = cachedClipboardBlob;
         clipboardImageType = cachedClipboardType;
+    }
+
+    // Fallback: direct clipboard read for copy->click flows where user did not
+    // press Ctrl+V on the page (no paste cache available).
+    if (!clipboardBlob) {
+        const clipboardApiCandidate = await readClipboardImageCandidate();
+        if (clipboardApiCandidate?.blob) {
+            clipboardBlob = clipboardApiCandidate.blob;
+            clipboardImageType = clipboardApiCandidate.mimeType;
+        }
     }
 
     // ── Nothing to offer → native dialog ──────────────────────────────────
