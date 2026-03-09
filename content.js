@@ -3067,6 +3067,7 @@ async function clearEditorSettings() {
 // Open Image Editor
 async function openImageEditor(blob, format) {
     const savedSettings = await loadEditorSettings();
+    const normalizedFormat = ['png', 'jpg', 'jpeg', 'webp'].includes(format) ? format : 'png';
     
     return new Promise((resolve) => {
         // Create editor modal
@@ -3337,12 +3338,12 @@ async function openImageEditor(blob, format) {
         let activeRatio = 'free';
         
         // Settings
-        let settings = savedSettings || {
+        let settings = {
             width: 0,
             height: 0,
-            maintainAspectRatio: true,
-            outputFormat: format,
-            quality: 90
+            maintainAspectRatio: savedSettings?.maintainAspectRatio ?? true,
+            outputFormat: normalizedFormat,
+            quality: savedSettings?.quality ?? 90
         };
 
         // Layout
@@ -3361,7 +3362,7 @@ async function openImageEditor(blob, format) {
                     <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                         <span class="info-badge" id="editor-resolution">📐 --x--</span>
                         <span class="info-badge" id="editor-filesize">💾 -- KB</span>
-                        <span class="info-badge" id="editor-format">🖼️ ${format.toUpperCase()}</span>
+                        <span class="info-badge" id="editor-format">🖼️ ${settings.outputFormat.toUpperCase()}</span>
                     </div>
                 </div>
                 
@@ -3469,13 +3470,13 @@ async function openImageEditor(blob, format) {
                         <div style="margin-bottom: 12px;">
                             <label class="editor-label">Format</label>
                             <select id="output-format" class="editor-input" style="width: 100%;">
-                                <option value="png" ${format === 'png' ? 'selected' : ''}>PNG (Lossless)</option>
-                                <option value="jpg" ${format === 'jpg' ? 'selected' : ''}>JPG (Compressed)</option>
-                                <option value="jpeg" ${format === 'jpeg' ? 'selected' : ''}>JPEG (Compressed)</option>
-                                <option value="webp" ${format === 'webp' ? 'selected' : ''}>WebP (Modern)</option>
+                                <option value="png" ${settings.outputFormat === 'png' ? 'selected' : ''}>PNG (Lossless)</option>
+                                <option value="jpg" ${settings.outputFormat === 'jpg' ? 'selected' : ''}>JPG (Compressed)</option>
+                                <option value="jpeg" ${settings.outputFormat === 'jpeg' ? 'selected' : ''}>JPEG (Compressed)</option>
+                                <option value="webp" ${settings.outputFormat === 'webp' ? 'selected' : ''}>WebP (Modern)</option>
                             </select>
                         </div>
-                        <div id="quality-container" style="${format === 'png' ? 'display: none;' : ''}">
+                        <div id="quality-container" style="${settings.outputFormat === 'png' ? 'display: none;' : ''}">
                             <label class="editor-label">Quality: <span id="quality-value">${settings.quality}%</span></label>
                             <input type="range" id="output-quality" class="editor-range" min="10" max="100" value="${settings.quality}">
                         </div>
