@@ -678,7 +678,7 @@ async function showSourceChoiceModal({ pdf, image }) {
 
         // Title
         const titleEl = document.createElement('h2');
-        titleEl.textContent = '📎 Dosya Seç';
+        titleEl.textContent = '📎 Choose File';
         Object.assign(titleEl.style, {
             margin: '0 0 20px', fontSize: '17px', fontWeight: '700',
             color: '#0f172a', textAlign: 'center', letterSpacing: '-0.2px',
@@ -702,21 +702,21 @@ async function showSourceChoiceModal({ pdf, image }) {
             Object.assign(pdfMeta.style, { flex: '1', minWidth: '0' });
 
             const pdfName = document.createElement('div');
-            pdfName.textContent = pdf.title ? `${pdf.title}.pdf` : 'Seçili PDF';
+            pdfName.textContent = pdf.title ? `${pdf.title}.pdf` : 'Selected PDF';
             Object.assign(pdfName.style, {
                 fontSize: '13px', fontWeight: '600', color: '#991b1b',
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             });
 
             const pdfLabel = document.createElement('div');
-            pdfLabel.textContent = 'Seçili PDF dosyası';
+            pdfLabel.textContent = 'Selected PDF file';
             Object.assign(pdfLabel.style, { fontSize: '11px', color: '#b91c1c', marginTop: '2px' });
 
             pdfMeta.appendChild(pdfName);
             pdfMeta.appendChild(pdfLabel);
 
             const pdfBtn = document.createElement('button');
-            pdfBtn.textContent = 'PDF Kullan';
+            pdfBtn.textContent = 'Use PDF';
             Object.assign(pdfBtn.style, {
                 padding: '8px 14px', fontSize: '13px', fontWeight: '600',
                 color: '#fff', background: '#dc2626', border: 'none',
@@ -776,7 +776,7 @@ async function showSourceChoiceModal({ pdf, image }) {
             Object.assign(imgBtns.style, { display: 'flex', flexDirection: 'column', gap: '6px', flexShrink: '0' });
 
             const useBtn = document.createElement('button');
-            useBtn.textContent = 'Resim Kullan';
+            useBtn.textContent = 'Use Image';
             Object.assign(useBtn.style, {
                 padding: '7px 12px', fontSize: '12px', fontWeight: '600',
                 color: '#fff', background: '#2563eb', border: 'none',
@@ -787,7 +787,7 @@ async function showSourceChoiceModal({ pdf, image }) {
             useBtn.onclick = () => cleanup('clipboard', { format: actualFormat });
 
             const editBtn = document.createElement('button');
-            editBtn.textContent = '✏️ Düzenle';
+            editBtn.textContent = '✏️ Edit';
             Object.assign(editBtn.style, {
                 padding: '7px 12px', fontSize: '12px', fontWeight: '600',
                 color: '#fff', background: '#7c3aed', border: 'none',
@@ -826,7 +826,7 @@ async function showSourceChoiceModal({ pdf, image }) {
 
         // ── Browse button ─────────────────────────────────────────────────────
         const browseBtn = document.createElement('button');
-        browseBtn.textContent = '📁 Bilgisayardan Seç';
+        browseBtn.textContent = '📁 Browse Files';
         Object.assign(browseBtn.style, {
             display: 'block', width: '100%',
             padding: '11px 16px', fontSize: '14px', fontWeight: '600',
@@ -841,7 +841,7 @@ async function showSourceChoiceModal({ pdf, image }) {
 
         // ── Cancel link ───────────────────────────────────────────────────────
         const cancelLink = document.createElement('button');
-        cancelLink.textContent = 'İptal';
+        cancelLink.textContent = 'Cancel';
         Object.assign(cancelLink.style, {
             display: 'block', margin: '12px auto 0',
             background: 'none', border: 'none', cursor: 'pointer',
@@ -2729,7 +2729,7 @@ function togglePdfPickerMode() {
 
 function activatePdfPickerMode() {
     if (!pdfPickerShortcut) {
-        showPdfPickerNotification('⚠️ Lütfen önce popup\'tan kısayol belirleyin', 'error');
+        showPdfPickerNotification('⚠️ Please set a shortcut in the popup first', 'error');
         return;
     }
     if (pdfPickerMode) return;
@@ -2756,7 +2756,7 @@ function activatePdfPickerMode() {
         white-space: nowrap;
         transition: background 0.2s;
     `;
-    infoBar.innerHTML = '📄 <strong>PDF Seçici aktif</strong> — Bir PDF linkine tıklayın &nbsp;|&nbsp; <kbd style="background:rgba(255,255,255,0.25);padding:1px 6px;border-radius:4px;">ESC</kbd> iptal';
+    infoBar.innerHTML = '📄 <strong>PDF Picker is active</strong> — Click a PDF link &nbsp;|&nbsp; <kbd style="background:rgba(255,255,255,0.25);padding:1px 6px;border-radius:4px;">ESC</kbd> cancel';
     document.documentElement.appendChild(infoBar);
 
     // ── Close button (pointer-events: auto — only this element is clickable) ──
@@ -2840,7 +2840,7 @@ function _pdfPickerMouseOver(e) {
                           link.getAttribute('download') ||
                           decodeURIComponent(link.pathname.split('/').pop()))
                          .substring(0, 60);
-            bar.innerHTML = `📄 <strong>${name}</strong> &nbsp;— tıklayın`;
+            bar.innerHTML = `📄 <strong>${name}</strong> &nbsp;— click to select`;
         }
     }
 }
@@ -2854,7 +2854,7 @@ function _pdfPickerMouseOut(e) {
         if (currentHighlightedPdfElement === link) currentHighlightedPdfElement = null;
 
         const bar = document.getElementById('pdf-picker-info-bar');
-        if (bar) bar.innerHTML = '📄 <strong>PDF Seçici aktif</strong> — Bir PDF linkine tıklayın &nbsp;|&nbsp; <kbd style="background:rgba(255,255,255,0.25);padding:1px 6px;border-radius:4px;">ESC</kbd> iptal';
+        if (bar) bar.innerHTML = '📄 <strong>PDF Picker is active</strong> — Click a PDF link &nbsp;|&nbsp; <kbd style="background:rgba(255,255,255,0.25);padding:1px 6px;border-radius:4px;">ESC</kbd> cancel';
     }
 }
 
@@ -2878,7 +2878,7 @@ async function _pdfPickerClick(e) {
     selectedPdfTitle = title;
     await setStoredSelectedPdf(url, title);
 
-    showPdfPickerNotification(`✓ PDF seçildi: ${title.substring(0, 50)}`, 'success');
+    showPdfPickerNotification(`✓ PDF selected: ${title.substring(0, 50)}`, 'success');
 
     // Notify popup
     try {
@@ -2943,36 +2943,332 @@ function showPdfPickerNotification(message, type, duration = 2500) {
     setTimeout(() => { if (n.parentNode) n.remove(); }, duration);
 }
 
-async function fetchPdfBlobForUpload(url) {
-    try {
-        const response = await fetch(url, { credentials: 'include' });
-        if (!response.ok) throw new Error(`Sunucu hatası: HTTP ${response.status}`);
-        return await response.blob();
-    } catch (directError) {
-        try {
-            const bgResponse = await chrome.runtime.sendMessage({
-                action: 'fetchPdfForUpload',
-                url
-            });
+function createPdfUploadProgressNotification(fileLabel) {
+    document.querySelectorAll('.pdf-picker-notification, .pdf-upload-progress').forEach(n => n.remove());
 
-            if (!bgResponse || !bgResponse.success || !Array.isArray(bgResponse.bytes)) {
-                throw new Error(bgResponse?.error || 'Background fetch başarısız');
+    const wrapper = document.createElement('div');
+    wrapper.className = 'pdf-upload-progress';
+    wrapper.style.cssText = `
+        position: fixed; top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        width: min(460px, 92vw);
+        background: #0f172a;
+        color: white;
+        border-radius: 14px;
+        padding: 16px 18px;
+        z-index: 2147483647;
+        box-shadow: 0 12px 36px rgba(0,0,0,0.42);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+
+    const title = document.createElement('div');
+    title.textContent = `Uploading PDF: ${fileLabel}`;
+    title.style.cssText = 'font-size:13px;font-weight:700;line-height:1.35;word-break:break-word;';
+
+    const phase = document.createElement('div');
+    phase.textContent = 'Connecting...';
+    phase.style.cssText = 'margin-top:8px;font-size:12px;color:#cbd5e1;';
+
+    const barTrack = document.createElement('div');
+    barTrack.style.cssText = 'margin-top:10px;height:8px;background:rgba(148,163,184,0.32);border-radius:999px;overflow:hidden;';
+
+    const barFill = document.createElement('div');
+    barFill.style.cssText = 'height:100%;width:0%;background:linear-gradient(90deg,#22d3ee,#3b82f6);transition:width 120ms linear;';
+    barTrack.appendChild(barFill);
+
+    const details = document.createElement('div');
+    details.textContent = '0%';
+    details.style.cssText = 'margin-top:7px;font-size:12px;color:#93c5fd;text-align:right;';
+
+    wrapper.appendChild(title);
+    wrapper.appendChild(phase);
+    wrapper.appendChild(barTrack);
+    wrapper.appendChild(details);
+    document.documentElement.appendChild(wrapper);
+
+    const formatMB = (bytes) => `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    let lastRenderedAt = 0;
+
+    const update = ({ received = 0, total = 0, statusText = '' } = {}) => {
+        const now = Date.now();
+        if (now - lastRenderedAt < 40 && total > 0) {
+            return;
+        }
+        lastRenderedAt = now;
+
+        phase.textContent = statusText || 'Downloading...';
+        if (total > 0) {
+            const percent = Math.min(100, Math.round((received / total) * 100));
+            barFill.style.width = `${percent}%`;
+            details.textContent = `${percent}% (${formatMB(received)} / ${formatMB(total)})`;
+            return;
+        }
+
+        const pulse = (received % 85) + 10;
+        barFill.style.width = `${pulse}%`;
+        details.textContent = `${formatMB(received)} downloaded`;
+    };
+
+    const finish = (ok, message) => {
+        phase.textContent = message;
+        barFill.style.width = '100%';
+        barFill.style.background = ok
+            ? 'linear-gradient(90deg,#10b981,#22c55e)'
+            : 'linear-gradient(90deg,#ef4444,#dc2626)';
+        details.textContent = ok ? 'Completed' : 'Error';
+        setTimeout(() => wrapper.remove(), ok ? 1700 : 3200);
+    };
+
+    return {
+        update,
+        finish,
+        remove: () => wrapper.remove()
+    };
+}
+
+async function readResponseAsBlobWithProgress(response, onProgress) {
+    const contentType = response.headers.get('content-type') || 'application/pdf';
+    const total = Number.parseInt(response.headers.get('content-length') || '0', 10) || 0;
+
+    if (!response.body || typeof response.body.getReader !== 'function') {
+        const blob = await response.blob();
+        onProgress?.({ received: blob.size, total: total || blob.size, statusText: 'Download complete' });
+        return blob;
+    }
+
+    const reader = response.body.getReader();
+    const chunks = [];
+    let received = 0;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.byteLength;
+        onProgress?.({ received, total, statusText: 'Downloading PDF...' });
+    }
+
+    return new Blob(chunks, { type: contentType });
+}
+
+function normalizeBinaryChunk(input) {
+    if (input instanceof Uint8Array) return input;
+    if (input instanceof ArrayBuffer) return new Uint8Array(input);
+    if (Array.isArray(input)) return new Uint8Array(input);
+
+    if (input && typeof input === 'object') {
+        const values = Object.values(input);
+        if (values.length > 0 && values.every(v => typeof v === 'number')) {
+            return new Uint8Array(values);
+        }
+    }
+    return null;
+}
+
+async function fetchPdfBlobViaBackgroundStream(url, onProgress) {
+    return new Promise((resolve, reject) => {
+        const requestId = `pdf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const port = chrome.runtime.connect({ name: 'pdfFetchStream' });
+        const chunks = [];
+        let contentType = 'application/pdf';
+        let settled = false;
+
+        const cleanup = () => {
+            try { port.disconnect(); } catch (_) {}
+        };
+
+        const fail = (message) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(new Error(message || 'Background stream failed'));
+        };
+
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve(new Blob(chunks, { type: contentType }));
+        };
+
+        const timeoutId = setTimeout(() => {
+            fail('Background stream timed out');
+        }, 180000);
+
+        port.onMessage.addListener((message) => {
+            if (!message || message.requestId !== requestId || settled) return;
+
+            if (message.type === 'chunk') {
+                const chunk = normalizeBinaryChunk(message.chunk);
+                if (!chunk) {
+                    clearTimeout(timeoutId);
+                    fail('Invalid chunk payload from background stream');
+                    return;
+                }
+                chunks.push(chunk);
+                if (message.contentType) contentType = message.contentType;
+                onProgress?.({
+                    received: message.received || 0,
+                    total: message.total || 0,
+                    statusText: 'Downloading PDF in background...'
+                });
+                return;
             }
 
+            if (message.type === 'progress') {
+                onProgress?.({
+                    received: message.received || 0,
+                    total: message.total || 0,
+                    statusText: 'Downloading PDF in background...'
+                });
+                return;
+            }
+
+            if (message.type === 'done') {
+                clearTimeout(timeoutId);
+                onProgress?.({
+                    received: message.received || 0,
+                    total: message.total || message.received || 0,
+                    statusText: 'Background download completed'
+                });
+                finish();
+                return;
+            }
+
+            if (message.type === 'error') {
+                clearTimeout(timeoutId);
+                fail(message.error || 'Background stream error');
+            }
+        });
+
+        port.onDisconnect.addListener(() => {
+            if (settled) return;
+            clearTimeout(timeoutId);
+            fail('Background stream disconnected');
+        });
+
+        try {
+            port.postMessage({
+                type: 'startPdfStream',
+                requestId,
+                url
+            });
+        } catch (_) {
+            clearTimeout(timeoutId);
+            fail('Failed to start background stream');
+        }
+    });
+}
+
+async function fetchPdfBlobForUpload(url, onProgress) {
+    const targetOrigin = (() => {
+        try { return new URL(url, window.location.href).origin; } catch (_) { return null; }
+    })();
+    const isCrossOrigin = !!targetOrigin && targetOrigin !== window.location.origin;
+
+    const fetchViaBackground = async (directError) => {
+        onProgress?.({ statusText: 'Switching to background download mode...' });
+
+        try {
+            return await fetchPdfBlobViaBackgroundStream(url, onProgress);
+        } catch (_) {
+            // Fall through to legacy one-shot message path.
+        }
+
+        const bgResponse = await chrome.runtime.sendMessage({
+            action: 'fetchPdfForUpload',
+            url
+        });
+
+        if (!bgResponse || !bgResponse.success) {
+            throw new Error(bgResponse?.error || 'Background fetch failed');
+        }
+
+        // Fast path: ArrayBuffer transfer.
+        if (bgResponse.arrayBuffer instanceof ArrayBuffer) {
+            const size = bgResponse.arrayBuffer.byteLength;
+            onProgress?.({
+                received: size,
+                total: bgResponse.contentLength || size,
+                statusText: 'Background download completed'
+            });
+            return new Blob([bgResponse.arrayBuffer], { type: bgResponse.contentType || 'application/pdf' });
+        }
+
+        // Robust path: Uint8Array transfer.
+        if (bgResponse.byteArray instanceof Uint8Array) {
+            const size = bgResponse.byteArray.byteLength;
+            onProgress?.({
+                received: size,
+                total: bgResponse.contentLength || size,
+                statusText: 'Background download completed'
+            });
+            return new Blob([bgResponse.byteArray], { type: bgResponse.contentType || 'application/pdf' });
+        }
+
+        // Some runtimes deserialize typed arrays as plain objects with numeric keys.
+        if (bgResponse.byteArray && typeof bgResponse.byteArray === 'object') {
+            const values = Object.values(bgResponse.byteArray);
+            const numeric = values.every(v => typeof v === 'number');
+            if (numeric && values.length > 0) {
+                const restored = new Uint8Array(values);
+                onProgress?.({
+                    received: restored.byteLength,
+                    total: bgResponse.contentLength || restored.byteLength,
+                    statusText: 'Background download completed'
+                });
+                return new Blob([restored], { type: bgResponse.contentType || 'application/pdf' });
+            }
+        }
+
+        // Backward compatibility: legacy numeric array payload.
+        if (Array.isArray(bgResponse.bytes)) {
             const byteArray = new Uint8Array(bgResponse.bytes);
+            onProgress?.({
+                received: byteArray.byteLength,
+                total: bgResponse.contentLength || byteArray.byteLength,
+                statusText: 'Background download completed'
+            });
             return new Blob([byteArray], { type: bgResponse.contentType || 'application/pdf' });
+        }
+
+        const message = directError?.message
+            ? `Background response format is invalid (direct: ${directError.message})`
+            : 'Background response format is invalid';
+        throw new Error(message);
+    };
+
+    try {
+        if (isCrossOrigin) {
+            return await fetchViaBackground(null);
+        }
+
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) throw new Error(`Server error: HTTP ${response.status}`);
+        onProgress?.({ statusText: 'Direct connection established, downloading...' });
+        return await readResponseAsBlobWithProgress(response, onProgress);
+    } catch (directError) {
+        try {
+            return await fetchViaBackground(directError);
         } catch (backgroundError) {
-            throw new Error(backgroundError?.message || directError?.message || 'PDF alınamadı');
+            throw new Error(backgroundError?.message || directError?.message || 'Unable to fetch PDF');
         }
     }
 }
 
 // Core: fetch PDF blob and inject it into a file input — no download needed
 async function injectPdfUrlIntoInput(input, url, title) {
-    showPdfPickerNotification('⏳ PDF yükleniyor...', 'info', 60000);
+    const filename = buildPdfFilename(title);
+    const progressUI = createPdfUploadProgressNotification(filename);
+
     try {
-        const blob = await fetchPdfBlobForUpload(url);
-        const filename = buildPdfFilename(title);
+        const blob = await fetchPdfBlobForUpload(url, (progress) => progressUI.update(progress));
+        progressUI.update({
+            received: blob.size,
+            total: blob.size,
+            statusText: 'Preparing form field...'
+        });
+
         const file = new File([blob], filename, { type: 'application/pdf' });
 
         const dt = new DataTransfer();
@@ -2981,12 +3277,12 @@ async function injectPdfUrlIntoInput(input, url, title) {
         input.dispatchEvent(new Event('change', { bubbles: true }));
         input.dispatchEvent(new Event('input',  { bubbles: true }));
 
-        document.querySelectorAll('.pdf-picker-notification').forEach(n => n.remove());
-        showPdfPickerNotification(`✓ PDF yüklendi: ${filename}`, 'success');
+        progressUI.finish(true, `Upload complete: ${filename}`);
+        showPdfPickerNotification(`✓ PDF uploaded: ${filename}`, 'success');
         return true;
     } catch (err) {
-        document.querySelectorAll('.pdf-picker-notification').forEach(n => n.remove());
-        showPdfPickerNotification(`✗ PDF yüklenemedi: ${err.message}`, 'error');
+        progressUI.finish(false, `Upload failed: ${err.message}`);
+        showPdfPickerNotification(`✗ PDF upload failed: ${err.message}`, 'error');
         console.error('[PDF Picker] inject error:', err);
         return false;
     }

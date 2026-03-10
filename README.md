@@ -22,6 +22,9 @@ A Chrome extension — upload clipboard images and PDFs to file input fields, co
 - **Select PDF links on any page**: Click any PDF link on the page using PDF Picker mode to select it
 - **Persistent storage**: The selected PDF is saved to `chrome.storage.local` and remembered even after page refresh
 - **CORS bypass**: PDFs are fetched via the background service worker, avoiding CORS errors
+- **Upload progress UI**: A live progress panel shows connection state, download/upload phases, percent, and MB progress during PDF injection
+- **Large file performance improvements**: Optimized transfer path (`ArrayBuffer`/typed-array handling, reduced conversion overhead) significantly lowers freezes for larger PDFs
+- **Cross-origin stability**: Cross-origin PDF URLs automatically use background fetch mode for more reliable uploads
 - **Smart filename**: Priority order is `download` attribute → URL path → link text; double `.pdf` extensions and unnecessary " PDF" suffixes are cleaned automatically
 - **Popup preview**: When the popup opens, the selected PDF's name is shown and can be downloaded directly
 
@@ -132,7 +135,17 @@ A Chrome extension — upload clipboard images and PDFs to file input fields, co
    - **Image Picker** — to copy images from the page
    - **Image Replace** — to replace images on the page
    - **Color Picker** — to capture colors from the screen
+   - **PDF Picker** — to select PDF links for direct upload to file inputs
 3. Press the new key combination — it is saved automatically
+
+---
+
+## What's New in v1.0.5
+
+- Added real-time PDF upload progress UI (status text, percent, MB counters)
+- Reduced PDF upload freezes by optimizing background-to-content transfer handling
+- Improved reliability for cross-origin PDF uploads via automatic background fetch path
+- Standardized newly added PDF picker/upload warning and status texts in English
 
 ---
 
