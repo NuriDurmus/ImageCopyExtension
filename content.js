@@ -527,7 +527,9 @@ async function handleFileInputClick(event) {
         if (userChoice.editedBlob) blob = userChoice.editedBlob;
 
         try {
-            const currentFormat = userChoice.format;
+            const currentFormat = normalizeImageFormat(
+                userChoice.editedBlob?.type || userChoice.format || imageType
+            );
 
             // Find conversion rule
             const matchingRule = conversionRules.find(rule =>
@@ -551,7 +553,7 @@ async function handleFileInputClick(event) {
                     } else {
                         // No rule or already edited — inject as-is
                         const fileName = generateFileName(currentFormat);
-                        const mimeType = getMimeTypeForFormat(currentFormat);
+                        const mimeType = userChoice.editedBlob?.type || getMimeTypeForFormat(currentFormat);
                         const file = new File([blob], fileName, { type: mimeType });
                         const dataTransfer = new DataTransfer();
                         dataTransfer.items.add(file);
@@ -1012,18 +1014,41 @@ async function convertImageFormat(blob, format, quality) {
     });
 }
 
+function normalizeImageFormat(format) {
+    const normalized = String(format || '')
+        .trim()
+        .toLowerCase()
+        .replace(/^image\//, '');
+
+    if (normalized === 'jpg') {
+        return 'jpeg';
+    }
+
+    if (normalized === 'svg+xml') {
+        return 'svg';
+    }
+
+    return normalized;
+}
+
+function getFileExtensionForFormat(format) {
+    const normalized = normalizeImageFormat(format);
+    return normalized === 'jpeg' ? 'jpg' : normalized;
+}
+
 // Generate file name
 function generateFileName(format) {
     const timestamp = new Date().getTime();
     const randomStr = Math.random().toString(36).substring(2, 8);
-    return `image_${timestamp}_${randomStr}.${format}`;
+    return `image_${timestamp}_${randomStr}.${getFileExtensionForFormat(format)}`;
 }
 
 function getMimeTypeForFormat(format) {
-    if (format === 'svg') {
+    const normalized = normalizeImageFormat(format);
+    if (normalized === 'svg') {
         return 'image/svg+xml';
     }
-    return `image/${format}`;
+    return `image/${normalized}`;
 }
 
 // Show notification
@@ -4454,7 +4479,43 @@ async function openImageEditor(blob, format) {
             });
         });
         
-        // Crop dragging
+        // Create new crop selection by clicking and dragging on the overlay
+        cropOverlayContainer.addEventListener('mousedown', (e) => {
+            if (!cropMode) return;
+            
+            // If clicking on existing crop selection or handles, don't create new selection
+            if (e.target === cropSelection || e.target.classList.contains('crop-handle')) {
+                return;
+            }
+            
+            // Get canvas position for coordinate calculation
+            const rect = canvasWrapper.getBoundingClientRect();
+            const containerRect = cropOverlayContainer.getBoundingClientRect();
+            
+            // Calculate click position relative to canvas
+            const clickX = (e.clientX - containerRect.left) * (currentImage.width / containerRect.width);
+            const clickY = (e.clientY - containerRect.top) * (currentImage.height / containerRect.height);
+            
+            // Start new crop selection
+            isDragging = true;
+            dragHandle = 'create';
+            dragStart = { x: e.clientX, y: e.clientY };
+            
+            // Initialize crop data at click point
+            cropData = {
+                x: clickX,
+                y: clickY,
+                width: 1,
+                height: 1
+            };
+            
+            updateCropInputs();
+            updateCropSelection();
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        
+        // Crop dragging - existing selection
         cropSelection.addEventListener('mousedown', (e) => {
             if (e.target === cropSelection) {
                 isDragging = true;
@@ -4484,7 +4545,31 @@ async function openImageEditor(blob, format) {
             const dx = (e.clientX - dragStart.x) * scaleX;
             const dy = (e.clientY - dragStart.y) * scaleY;
             
-            if (dragHandle === 'move') {
+            if (dragHandle === 'create') {
+                // Create new selection by dragging
+                const endX = cropData.x + dx;
+                const endY = cropData.y + dy;
+                
+                cropData.x = Math.min(cropData.x, endX);
+                cropData.y = Math.min(cropData.y, endY);
+                cropData.width = Math.abs(dx);
+                cropData.height = Math.abs(dy);
+                
+                // Maintain aspect ratio if set
+                if (cropAspectRatio) {
+                    if (Math.abs(dx) > Math.abs(dy)) {
+                        cropData.height = cropData.width / cropAspectRatio;
+                    } else {
+                        cropData.width = cropData.height * cropAspectRatio;
+                    }
+                }
+                
+                // Clamp to image bounds
+                cropData.x = Math.max(0, Math.min(cropData.x, currentImage.width - 1));
+                cropData.y = Math.max(0, Math.min(cropData.y, currentImage.height - 1));
+                cropData.width = Math.max(1, Math.min(cropData.width, currentImage.width - cropData.x));
+                cropData.height = Math.max(1, Math.min(cropData.height, currentImage.height - cropData.y));
+            } else if (dragHandle === 'move') {
                 cropData.x = Math.max(0, Math.min(cropData.x + dx, currentImage.width - cropData.width));
                 cropData.y = Math.max(0, Math.min(cropData.y + dy, currentImage.height - cropData.height));
             } else {

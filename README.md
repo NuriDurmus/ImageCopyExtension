@@ -140,6 +140,13 @@ A Chrome extension — upload clipboard images and PDFs to file input fields, co
 
 ---
 
+## What's New in v1.0.6
+
+- Fixed crop workflow: you can now click and drag directly on the canvas to create a new crop area with custom size
+- Improved crop interaction behavior while preserving existing move/resize handle controls and ratio constraints
+- Fixed "Use Edited Image" injection reliability by normalizing image format and MIME mapping (notably JPG/JPEG)
+- Ensured edited images are injected into file inputs as valid File objects across stricter upload validators
+
 ## What's New in v1.0.5
 
 - Added real-time PDF upload progress UI (status text, percent, MB counters)
